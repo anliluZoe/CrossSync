@@ -242,6 +242,21 @@ describe('sync command', () => {
       path.join(fixture.chromeDataDir, 'Profile 11'),
     );
     fs.mkdirSync(path.join(fixture.chromeDataDir, 'Profile 12'));
+    fs.writeFileSync(
+      path.join(fixture.chromeDataDir, 'Local State'),
+      JSON.stringify({
+        profile: {
+          info_cache: {
+            'Profile 11': {
+              name: 'Roe',
+              user_name: 'roe@example.com',
+              gaia_name: 'Roe He',
+            },
+            'Profile 12': { name: 'Personal', user_name: 'me@example.com' },
+          },
+        },
+      }),
+    );
     const io = createMemoryIo();
     const context = createContext({ homeDir: fixture.homeDir, io, console: false });
     const requests: ProfileSelectionRequest[] = [];
@@ -260,12 +275,16 @@ describe('sync command', () => {
     // Edge's Default still exists, so only Chrome is asked.
     expect(requests.map((request) => request.browser)).toEqual(['chrome']);
     expect(requests[0].available).toEqual(['Profile 11', 'Profile 12']);
+    expect(requests[0].infos).toEqual([
+      { profile: 'Profile 11', name: 'Roe', userName: 'roe@example.com', gaiaName: 'Roe He' },
+      { profile: 'Profile 12', name: 'Personal', userName: 'me@example.com' },
+    ]);
     expect(context.config.profile).toBe('Default,Profile 11,Profile 12');
     expect(readJson<{ profile: string }>(fixture.configFile).profile).toBe(
       'Default,Profile 11,Profile 12',
     );
     expect(io.stdout.join('\n')).toContain('Profile selection saved');
-    expect(io.stdout.join('\n')).toContain('chrome/Profile 11');
+    expect(io.stdout.join('\n')).toContain('chrome/Profile 11 — Roe <roe@example.com>');
   });
 
   it('does not prompt when --profile is supplied', async () => {

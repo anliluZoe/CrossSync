@@ -27,6 +27,9 @@ export const LOG_FILE_NAME = 'crosssync.log';
 export const BOOKMARKS_FILE_NAME = 'Bookmarks';
 export const HISTORY_FILE_NAME = 'History';
 
+/** File in the "User Data" root holding per-profile display/account metadata. */
+export const LOCAL_STATE_FILE_NAME = 'Local State';
+
 /** Chromium profile directory names that actually hold user data. */
 export const PROFILE_NAME_PATTERN = /^(Default|Profile \d+)$/;
 

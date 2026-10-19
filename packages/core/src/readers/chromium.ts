@@ -9,6 +9,7 @@ import {
   HISTORY_QUERY,
   isBookmarkFile,
   listProfiles,
+  LOCAL_STATE_FILE_NAME,
   parseChromiumTime,
   parseProfileList,
   readJsonFile,
@@ -48,18 +49,79 @@ export interface HistorySource {
   entries: HistoryEntry[];
 }
 
+export interface ChromiumProfileInfo {
+  /** Profile directory name, e.g. `Profile 11`. */
+  profile: string;
+  /** Local profile label shown in the browser's profile switcher. */
+  name?: string;
+  /** Email of the signed-in Google account. */
+  userName?: string;
+  /** Display name of the signed-in Google account. */
+  gaiaName?: string;
+  /** Whether Chromium still uses its placeholder profile name. */
+  isUsingDefaultName?: boolean;
+}
+
 export interface BrowserReader {
   browser: BrowserName;
   /** The "User Data" directory this reader reads from. */
   dataDir: string;
   /** All Chromium profile directories that exist on disk. */
   profiles(): string[];
+  /** Display metadata for every profile directory that exists on disk. */
+  profileInfos(): ChromiumProfileInfo[];
+  /** Display metadata for one profile, or null when it is not on disk. */
+  profileInfo(profile: string): ChromiumProfileInfo | null;
   /** Profiles selected by `profile`, which may be `all`. */
   resolveProfiles(profile: string): string[];
   bookmarksPath(profile: string): string;
   historyPath(profile: string): string;
   readBookmarks(profile: string): BookmarkSource;
   readHistory(profile: string): HistorySource;
+}
+
+interface LocalStateFile {
+  profile?: {
+    info_cache?: Record<string, Record<string, unknown>>;
+  };
+}
+
+/**
+ * Reads display names and signed-in account details from `<User Data>/Local State`.
+ * Missing or malformed metadata yields an empty list rather than an error.
+ */
+export function readProfileInfos(dataDir: string): ChromiumProfileInfo[] {
+  const localState = readJsonFile<LocalStateFile>(path.join(dataDir, LOCAL_STATE_FILE_NAME));
+  const cache = localState?.profile?.info_cache ?? {};
+  return listProfiles(dataDir).map((profile) => toProfileInfo(profile, cache[profile]));
+}
+
+function toProfileInfo(
+  profile: string,
+  raw: Record<string, unknown> | undefined,
+): ChromiumProfileInfo {
+  const info: ChromiumProfileInfo = { profile };
+  const name = readString(raw, 'name');
+  const userName = readString(raw, 'user_name');
+  const gaiaName = readString(raw, 'gaia_name');
+  if (name !== undefined) {
+    info.name = name;
+  }
+  if (userName !== undefined) {
+    info.userName = userName;
+  }
+  if (gaiaName !== undefined) {
+    info.gaiaName = gaiaName;
+  }
+  if (typeof raw?.is_using_default_name === 'boolean') {
+    info.isUsingDefaultName = raw.is_using_default_name;
+  }
+  return info;
+}
+
+function readString(raw: Record<string, unknown> | undefined, key: string): string | undefined {
+  const value = raw?.[key];
+  return typeof value === 'string' && value.trim().length > 0 ? value.trim() : undefined;
 }
 
 /** Maps a raw SQLite row into a normalised `HistoryEntry`. */
@@ -108,6 +170,11 @@ export function createBrowserReader(
 
   const profiles = (): string[] => listProfiles(dataDir);
 
+  const profileInfos = (): ChromiumProfileInfo[] => readProfileInfos(dataDir);
+
+  const profileInfo = (profile: string): ChromiumProfileInfo | null =>
+    profileInfos().find((info) => info.profile === profile) ?? null;
+
   const resolveSelectedProfiles = (profile: string): string[] => {
     const found = profiles();
     if (profile.trim() === 'all') {
@@ -142,6 +209,8 @@ export function createBrowserReader(
     browser,
     dataDir,
     profiles,
+    profileInfos,
+    profileInfo,
     resolveProfiles: resolveSelectedProfiles,
     bookmarksPath,
     historyPath,

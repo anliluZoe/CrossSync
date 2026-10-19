@@ -16,6 +16,7 @@ import {
   countBookmarkFileNodes,
   createConfiguredBrowserReaders,
   type BookmarkSource,
+  type ChromiumProfileInfo,
   type HistorySource,
 } from './readers';
 
@@ -44,6 +45,8 @@ export interface SyncRunOptions {
 export interface BrowserSyncOutcome {
   browser: BrowserName;
   profile: string;
+  /** Local display name / signed-in account, when Chromium exposes it. */
+  profileInfo: ChromiumProfileInfo | null;
   bookmarksRead: number;
   historyRead: number;
   writtenBack: boolean;
@@ -135,6 +138,7 @@ export function runSync(options: SyncRunOptions): SyncReport {
       const outcome: BrowserSyncOutcome = {
         browser: reader.browser,
         profile,
+        profileInfo: reader.profileInfo(profile),
         bookmarksRead: 0,
         historyRead: 0,
         writtenBack: false,

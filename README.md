@@ -101,6 +101,10 @@ crosssync profiles --reset                          # 恢复为 Default
 所有 profile，让你按序号选择（支持多选，例如 `1,3`，或输入 `all`）。选择结果会写入
 `~/.crosssync/config.json`，之后每次同步都会沿用；也可以用上面的 `profiles` 命令随时修改。
 
+列表中的 profile 会附带显示 `Local State` 里记录的名称和已登录的 Google 账号（例如
+`Profile 11  Roe(silk) <roe@example.com>`），这样可以直接认出每个 profile 对应哪个账号。
+未登录的 profile 只显示本地名称。
+
 配置值是各浏览器可用 profile 名称的并集：例如 `Default,Profile 11` 表示 Edge 使用
 `Default`、Chrome 使用 `Profile 11`，某个浏览器中不存在的名称会被自动忽略。
 也可以临时用 `--profile "Profile 11,Profile 12"` 覆盖，而不修改配置。

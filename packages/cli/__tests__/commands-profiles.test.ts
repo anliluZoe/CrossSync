@@ -40,6 +40,34 @@ describe('profiles command', () => {
     expect(output).toContain('Selected profile(s): Default');
   });
 
+  it('shows the account behind each profile', () => {
+    const { fixture, context, io } = setupHarness();
+    fs.writeFileSync(
+      path.join(fixture.chromeDataDir, 'Local State'),
+      JSON.stringify({
+        profile: {
+          info_cache: {
+            Default: { name: 'Personal', user_name: 'me@example.com', gaia_name: 'Me' },
+            'Profile 11': {
+              name: '您的 Chrome 数据',
+              user_name: 'work@example.com',
+              gaia_name: 'Work',
+              is_using_default_name: true,
+            },
+          },
+        },
+      }),
+    );
+
+    expect(runProfilesCommand(context, { browser: 'chrome' })).toBe(0);
+
+    const output = io.stdout.join('\n');
+    expect(output).toContain('Default  Personal <me@example.com>  [selected]');
+    expect(output).toContain('Profile 11  Work <work@example.com>');
+    expect(output).toContain('Profile 12');
+    expect(output).not.toContain('Profile 12  ');
+  });
+
   it('limits listing to one browser', () => {
     const { context, io } = setupHarness();
 

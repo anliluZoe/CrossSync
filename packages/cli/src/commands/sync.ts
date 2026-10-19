@@ -8,11 +8,17 @@ import {
   resolveExportRetention,
   SYNC_STRATEGIES,
 } from '@crosssync/shared';
-import { createConfiguredBrowserReaders, runSync, type SyncReport } from '@crosssync/core';
+import {
+  createConfiguredBrowserReaders,
+  runSync,
+  type ChromiumProfileInfo,
+  type SyncReport,
+} from '@crosssync/core';
 
 import type { CliContext } from '../context';
 import { saveConfigFile } from '../context';
 import { pruneExports } from '../export-files';
+import { formatProfileAccount } from '../profile-info';
 
 export interface SyncCommandOptions {
   bookmarks?: boolean;
@@ -40,6 +46,8 @@ export interface ProfileSelectionRequest {
   dataDir: string;
   /** Profiles that actually exist on disk. */
   available: string[];
+  /** Account/display metadata for the available profiles, when known. */
+  infos?: ChromiumProfileInfo[];
   /** The currently configured profile value. */
   current: string;
 }
@@ -142,6 +150,7 @@ async function ensureProfilesSelected(
       browser: reader.browser,
       dataDir: reader.dataDir,
       available,
+      infos: reader.profileInfos(),
       current: context.config.profile,
     });
     if (!selected || selected.length === 0) {
@@ -169,8 +178,10 @@ export async function promptForProfiles(
   const output = process.stdout;
   output.write(`\nNo ${request.browser} profile matched "${request.current}".\n`);
   output.write(`Available ${request.browser} profiles in ${request.dataDir}:\n`);
+  const infos = new Map((request.infos ?? []).map((info) => [info.profile, info]));
   request.available.forEach((name, index) => {
-    output.write(`  ${index + 1}) ${name}\n`);
+    const account = formatProfileAccount(infos.get(name));
+    output.write(`  ${index + 1}) ${name}${account ? `  ${account}` : ''}\n`);
   });
 
   const rl = readline.createInterface({ input: process.stdin, output });
@@ -290,7 +301,8 @@ export function formatSyncReport(report: SyncReport): string[] {
   lines.push(`CrossSync sync (${report.strategy}, ${kinds})${report.dryRun ? ' [dry run]' : ''}`);
 
   for (const outcome of report.browsers) {
-    const parts = [`${outcome.browser}/${outcome.profile}`];
+    const account = formatProfileAccount(outcome.profileInfo);
+    const parts = [`${outcome.browser}/${outcome.profile}${account ? ` — ${account}` : ''}`];
     if (report.targets.bookmarks) {
       parts.push(`${outcome.bookmarksRead} bookmark nodes`);
     }

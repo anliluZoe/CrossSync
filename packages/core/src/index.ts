@@ -30,12 +30,14 @@ export {
   countBookmarkFileNodes,
   createBrowserReader,
   createConfiguredBrowserReaders,
+  readProfileInfos,
   supportedBrowsers,
   toHistoryEntry,
   type BookmarkSource,
   type BrowserReader,
   type BrowserReaderOptions,
   type ChromiumHistoryRow,
+  type ChromiumProfileInfo,
   type HistorySource,
 } from './readers';
 export {

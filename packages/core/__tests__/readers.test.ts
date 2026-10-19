@@ -119,6 +119,49 @@ describe('createBrowserReader', () => {
     expect(reader.profiles()).toEqual(['Default', 'Profile 1']);
   });
 
+  it('reads profile names and accounts from Local State', () => {
+    const { dataDir } = setup();
+    fs.writeFileSync(
+      path.join(dataDir, 'Local State'),
+      JSON.stringify({
+        profile: {
+          info_cache: {
+            Default: { name: 'Personal', user_name: 'me@example.com', gaia_name: 'Me' },
+            'Profile 1': {
+              name: '您的 Chrome 数据',
+              user_name: 'work@example.com',
+              gaia_name: 'Work',
+              is_using_default_name: true,
+            },
+          },
+        },
+      }),
+    );
+    const reader = createBrowserReader('chrome', { dataDir });
+
+    expect(reader.profileInfos()).toEqual([
+      { profile: 'Default', name: 'Personal', userName: 'me@example.com', gaiaName: 'Me' },
+      {
+        profile: 'Profile 1',
+        name: '您的 Chrome 数据',
+        userName: 'work@example.com',
+        gaiaName: 'Work',
+        isUsingDefaultName: true,
+      },
+    ]);
+    expect(reader.profileInfo('Profile 1')?.userName).toBe('work@example.com');
+    expect(reader.profileInfo('Profile 9')).toBeNull();
+  });
+
+  it('tolerates a missing or malformed Local State', () => {
+    const { dataDir } = setup();
+    const reader = createBrowserReader('chrome', { dataDir });
+    expect(reader.profileInfos()).toEqual([{ profile: 'Default' }, { profile: 'Profile 1' }]);
+
+    fs.writeFileSync(path.join(dataDir, 'Local State'), 'not json');
+    expect(reader.profileInfo('Default')).toEqual({ profile: 'Default' });
+  });
+
   it('resolves a single profile or all of them', () => {
     const { dataDir } = setup();
     const reader = createBrowserReader('chrome', { dataDir });

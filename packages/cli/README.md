@@ -82,7 +82,8 @@ crosssync sync --json                 # 机器可读报告
 ```
 
 如果配置的 profile（默认 `Default`）在某个浏览器中不存在，交互式终端会列出可用的
-profile 让你按序号选择（支持多选），并自动保存选择。
+profile 让你按序号选择（支持多选），并自动保存选择。列表会附带 `Local State` 中记录的
+本地名称和已登录账号（如 `Profile 11  Roe <roe@example.com>`），便于区分 profile。
 
 ### `crosssync profiles`
 

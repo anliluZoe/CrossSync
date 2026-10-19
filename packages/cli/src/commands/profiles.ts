@@ -10,6 +10,7 @@ import { createBrowserReader, createConfiguredBrowserReaders } from '@crosssync/
 
 import type { CliContext } from '../context';
 import { saveConfigFile } from '../context';
+import { formatProfileAccount } from '../profile-info';
 
 export interface ProfilesCommandOptions {
   list?: boolean;
@@ -68,9 +69,13 @@ function listProfiles(context: CliContext, options: ProfilesCommandOptions): num
       context.io.out('  (no profiles found)');
       continue;
     }
+    const infos = new Map(reader.profileInfos().map((info) => [info.profile, info]));
     for (const name of available) {
       const isSelected = selected === null || selected.includes(name);
-      context.io.out(`  ${name}${isSelected ? '  [selected]' : ''}`);
+      const account = formatProfileAccount(infos.get(name));
+      context.io.out(
+        `  ${name}${account ? `  ${account}` : ''}${isSelected ? '  [selected]' : ''}`,
+      );
     }
     const missing = selected?.filter((name) => !available.includes(name)) ?? [];
     if (missing.length > 0) {
