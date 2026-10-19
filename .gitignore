@@ -1,0 +1,30 @@
+# Dependencies
+node_modules/
+
+# Build output / npm tarballs
+dist/
+*.tgz
+*.tsbuildinfo
+
+# Local packaging/install experiments
+.tmp/
+
+# Turbo cache / logs
+.turbo/
+
+# Test output
+coverage/
+
+# CrossSync runtime data (backups, exports, logs)
+.crosssync/
+
+# Editor / OS
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
+npm-debug.log*
+pnpm-debug.log*

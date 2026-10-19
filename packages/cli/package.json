@@ -1,0 +1,53 @@
+{
+  "name": "crosssync",
+  "version": "0.1.0",
+  "description": "Cross-browser bookmark & history sync CLI (Chrome + Edge)",
+  "license": "MIT",
+  "keywords": [
+    "bookmarks",
+    "history",
+    "chrome",
+    "edge",
+    "chromium",
+    "sync",
+    "cli"
+  ],
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/anliluZoe/CrossSync.git"
+  },
+  "bugs": {
+    "url": "https://github.com/anliluZoe/CrossSync/issues"
+  },
+  "homepage": "https://github.com/anliluZoe/CrossSync#readme",
+  "bin": {
+    "crosssync": "dist/index.js"
+  },
+  "files": [
+    "dist"
+  ],
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "build": "tsup",
+    "prepack": "pnpm --dir ../.. exec turbo run build --filter crosssync",
+    "test": "vitest run",
+    "lint": "eslint src --ext .ts",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "dev": "tsup --watch"
+  },
+  "devDependencies": {
+    "@crosssync/core": "workspace:*",
+    "@crosssync/shared": "workspace:*",
+    "commander": "^12.1.0",
+    "eslint": "^8.57.0",
+    "prettier": "^3.3.0",
+    "tsup": "^8.5.1",
+    "typescript": "^5.6.0",
+    "vitest": "^2.1.0"
+  },
+  "dependencies": {
+    "better-sqlite3": "^11.3.0"
+  }
+}
