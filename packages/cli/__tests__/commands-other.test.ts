@@ -150,7 +150,7 @@ describe('status command', () => {
 
     expect(code).toBe(0);
     const output = io.stdout.join('\n');
-    expect(output).toContain('CrossSync 0.1.2');
+    expect(output).toContain('CrossSync 0.1.3');
     expect(output).toContain(`config:    ${fixture.configFile}`);
     expect(output).toContain('schedule:  not installed');
     expect(output).toContain('Default: Bookmarks');
@@ -167,7 +167,7 @@ describe('status command', () => {
       version: string;
       browsers: { browser: string }[];
     };
-    expect(report.version).toBe('0.1.2');
+    expect(report.version).toBe('0.1.3');
     expect(report.browsers.map((entry) => entry.browser)).toEqual(['chrome', 'edge']);
   });
 });
