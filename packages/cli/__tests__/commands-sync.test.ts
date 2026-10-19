@@ -4,10 +4,12 @@ import path from 'path';
 
 import { createContext, createMemoryIo, type CliContext } from '../src/context';
 import {
+  parseProfileAnswer,
   resolveTargets,
   resolveBrowsers,
   resolveStrategy,
   runSyncCommand,
+  type ProfileSelectionRequest,
 } from '../src/commands/sync';
 import { cleanupTempDirs, createCliFixture, type CliFixture } from './helpers';
 
@@ -57,13 +59,23 @@ describe('sync option helpers', () => {
     expect(resolveStrategy('export')).toBe('export');
     expect(() => resolveStrategy('overwrite')).toThrow(/Unknown strategy/);
   });
+
+  it('parseProfileAnswer accepts numbers, names and all', () => {
+    const available = ['Profile 8', 'Profile 9', 'Profile 11'];
+    expect(parseProfileAnswer('1,3', available)).toEqual(['Profile 8', 'Profile 11']);
+    expect(parseProfileAnswer('Profile 9', available)).toEqual(['Profile 9']);
+    expect(parseProfileAnswer('all', available)).toEqual(available);
+    expect(parseProfileAnswer('', available)).toBeNull();
+    expect(parseProfileAnswer('9', available)).toBeUndefined();
+    expect(parseProfileAnswer('nope', available)).toBeUndefined();
+  });
 });
 
 describe('sync command', () => {
-  it('merges and writes back both browsers', () => {
+  it('merges and writes back both browsers', async () => {
     const { fixture, context, io } = setupHarness();
 
-    const code = runSyncCommand(context, {
+    const code = await runSyncCommand(context, {
       bookmarks: true,
       now: new Date(2026, 0, 16, 9, 30, 5),
       browserRunning: () => false,
@@ -80,10 +92,10 @@ describe('sync command', () => {
     expect(chrome.roots.bookmark_bar.children.map((child) => child.id)).toEqual(['2', '3', '5']);
   });
 
-  it('skips write-back while a browser is running', () => {
+  it('skips write-back while a browser is running', async () => {
     const { fixture, context, io } = setupHarness();
 
-    runSyncCommand(context, { bookmarks: true, browserRunning: () => true });
+    await runSyncCommand(context, { bookmarks: true, browserRunning: () => true });
 
     expect(readJson<{ checksum?: string }>(chromeBookmarkPath(fixture)).checksum).toBe(
       'chrome-checksum',
@@ -91,18 +103,18 @@ describe('sync command', () => {
     expect(io.stdout.join('\n')).toContain('write-back skipped (browser-running)');
   });
 
-  it('honours --force', () => {
+  it('honours --force', async () => {
     const { fixture, context } = setupHarness();
 
-    runSyncCommand(context, { bookmarks: true, force: true, browserRunning: () => true });
+    await runSyncCommand(context, { bookmarks: true, force: true, browserRunning: () => true });
 
     expect(readJson<{ checksum?: string }>(chromeBookmarkPath(fixture)).checksum).toBeUndefined();
   });
 
-  it('honours --strategy export', () => {
+  it('honours --strategy export', async () => {
     const { fixture, context, io } = setupHarness();
 
-    runSyncCommand(context, {
+    await runSyncCommand(context, {
       bookmarks: true,
       strategy: 'export',
       browserRunning: () => false,
@@ -114,19 +126,19 @@ describe('sync command', () => {
     expect(io.stdout.join('\n')).toContain('left untouched');
   });
 
-  it('emits JSON when asked', () => {
+  it('emits JSON when asked', async () => {
     const { context, io } = setupHarness();
 
-    runSyncCommand(context, { bookmarks: true, json: true, browserRunning: () => false });
+    await runSyncCommand(context, { bookmarks: true, json: true, browserRunning: () => false });
 
     const report = JSON.parse(io.stdout.join('\n')) as { bookmarkMerge: { stats: unknown } };
     expect(report.bookmarkMerge.stats).toBeDefined();
   });
 
-  it('does not touch any file on a dry run', () => {
+  it('does not touch any file on a dry run', async () => {
     const { fixture, context, io } = setupHarness();
 
-    const code = runSyncCommand(context, {
+    const code = await runSyncCommand(context, {
       bookmarks: true,
       dryRun: true,
       browserRunning: () => false,
@@ -140,10 +152,10 @@ describe('sync command', () => {
     );
   });
 
-  it('creates a backup before writing back', () => {
+  it('creates a backup before writing back', async () => {
     const { fixture, context } = setupHarness();
 
-    runSyncCommand(context, {
+    await runSyncCommand(context, {
       bookmarks: true,
       now: new Date(2026, 0, 16, 9, 30, 5),
       browserRunning: () => false,
@@ -159,10 +171,10 @@ describe('sync command', () => {
     expect(fs.existsSync(backup)).toBe(true);
   });
 
-  it('syncs history into an export file without writing back', () => {
+  it('syncs history into an export file without writing back', async () => {
     const { context, io } = setupHarness();
 
-    const code = runSyncCommand(context, {
+    const code = await runSyncCommand(context, {
       history: true,
       now: new Date(2026, 0, 16, 9, 30, 5),
       browserRunning: () => false,
@@ -174,14 +186,14 @@ describe('sync command', () => {
     expect(output).toContain('never writes back');
   });
 
-  it('prunes older export files after a successful run', () => {
+  it('prunes older export files after a successful run', async () => {
     const { fixture, context } = setupHarness();
     context.config.exports = { keep: 1 };
     const dir = fixture.config.exportDir;
     fs.mkdirSync(dir, { recursive: true });
     fs.writeFileSync(path.join(dir, 'bookmarks-merged-20260115-090000.json'), '{}');
 
-    runSyncCommand(context, {
+    await runSyncCommand(context, {
       bookmarks: true,
       now: new Date(2026, 0, 16, 9, 30, 5),
       browserRunning: () => false,
@@ -192,7 +204,7 @@ describe('sync command', () => {
     ]);
   });
 
-  it('does not prune exports on a dry run', () => {
+  it('does not prune exports on a dry run', async () => {
     const { fixture, context } = setupHarness();
     context.config.exports = { keep: 1 };
     const dir = fixture.config.exportDir;
@@ -200,7 +212,7 @@ describe('sync command', () => {
     const old = path.join(dir, 'bookmarks-merged-20260115-090000.json');
     fs.writeFileSync(old, '{}');
 
-    runSyncCommand(context, {
+    await runSyncCommand(context, {
       bookmarks: true,
       dryRun: true,
       now: new Date(2026, 0, 16, 9, 30, 5),
@@ -210,16 +222,87 @@ describe('sync command', () => {
     expect(fs.existsSync(old)).toBe(true);
   });
 
-  it('reports when no browser data exists', () => {
+  it('reports when no browser data exists', async () => {
     const fixture = createCliFixture({ withHistory: false });
     fs.rmSync(path.join(fixture.chromeDataDir, 'Default'), { recursive: true, force: true });
     fs.rmSync(path.join(fixture.edgeDataDir, 'Default'), { recursive: true, force: true });
     const io = createMemoryIo();
     const context = createContext({ homeDir: fixture.homeDir, io, console: false });
 
-    const code = runSyncCommand(context, { bookmarks: true, browserRunning: () => false });
+    const code = await runSyncCommand(context, { bookmarks: true, browserRunning: () => false });
 
     expect(code).toBe(0);
     expect(io.stdout.join('\n')).toContain('Nothing to sync');
+  });
+
+  it('prompts for a missing profile and persists the multi-profile selection', async () => {
+    const fixture = createCliFixture();
+    fs.renameSync(
+      path.join(fixture.chromeDataDir, 'Default'),
+      path.join(fixture.chromeDataDir, 'Profile 11'),
+    );
+    fs.mkdirSync(path.join(fixture.chromeDataDir, 'Profile 12'));
+    const io = createMemoryIo();
+    const context = createContext({ homeDir: fixture.homeDir, io, console: false });
+    const requests: ProfileSelectionRequest[] = [];
+
+    const code = await runSyncCommand(context, {
+      bookmarks: true,
+      now: new Date(2026, 0, 16, 9, 30, 5),
+      browserRunning: () => false,
+      selectProfiles: async (request) => {
+        requests.push(request);
+        return request.browser === 'chrome' ? ['Profile 11', 'Profile 12'] : null;
+      },
+    });
+
+    expect(code).toBe(0);
+    // Edge's Default still exists, so only Chrome is asked.
+    expect(requests.map((request) => request.browser)).toEqual(['chrome']);
+    expect(requests[0].available).toEqual(['Profile 11', 'Profile 12']);
+    expect(context.config.profile).toBe('Default,Profile 11,Profile 12');
+    expect(readJson<{ profile: string }>(fixture.configFile).profile).toBe(
+      'Default,Profile 11,Profile 12',
+    );
+    expect(io.stdout.join('\n')).toContain('Profile selection saved');
+    expect(io.stdout.join('\n')).toContain('chrome/Profile 11');
+  });
+
+  it('does not prompt when --profile is supplied', async () => {
+    const fixture = createCliFixture();
+    fs.renameSync(
+      path.join(fixture.chromeDataDir, 'Default'),
+      path.join(fixture.chromeDataDir, 'Profile 11'),
+    );
+    const io = createMemoryIo();
+    const context = createContext({ homeDir: fixture.homeDir, io, console: false });
+    let prompted = false;
+
+    await runSyncCommand(context, {
+      bookmarks: true,
+      profile: 'Profile 11',
+      browserRunning: () => false,
+      selectProfiles: async () => {
+        prompted = true;
+        return ['Profile 11'];
+      },
+    });
+
+    expect(prompted).toBe(false);
+    expect(context.config.profile).toBe('Default');
+  });
+
+  it('lists available profiles in the warning when not interactive', async () => {
+    const fixture = createCliFixture();
+    fs.renameSync(
+      path.join(fixture.chromeDataDir, 'Default'),
+      path.join(fixture.chromeDataDir, 'Profile 11'),
+    );
+    const io = createMemoryIo();
+    const context = createContext({ homeDir: fixture.homeDir, io, console: false });
+
+    await runSyncCommand(context, { bookmarks: true, browserRunning: () => false });
+
+    expect(io.stdout.join('\n')).toContain('Available: Profile 11');
   });
 });

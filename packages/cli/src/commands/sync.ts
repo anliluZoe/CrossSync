@@ -1,13 +1,17 @@
+import * as readline from 'node:readline/promises';
+
 import type { BrowserName, CliConfig, SyncStrategy } from '@crosssync/shared';
 import {
+  addProfilesToSelection,
   BROWSERS,
   isBrowserName,
   resolveExportRetention,
   SYNC_STRATEGIES,
 } from '@crosssync/shared';
-import { runSync, type SyncReport } from '@crosssync/core';
+import { createConfiguredBrowserReaders, runSync, type SyncReport } from '@crosssync/core';
 
 import type { CliContext } from '../context';
+import { saveConfigFile } from '../context';
 import { pruneExports } from '../export-files';
 
 export interface SyncCommandOptions {
@@ -25,9 +29,23 @@ export interface SyncCommandOptions {
   json?: boolean;
   /** Injectable for tests. */
   browserRunning?: (browser: BrowserName) => boolean;
+  /** Asked when the configured profile cannot be found for a browser. */
+  selectProfiles?: ProfileSelector;
   now?: Date;
   platform?: NodeJS.Platform;
 }
+
+export interface ProfileSelectionRequest {
+  browser: BrowserName;
+  dataDir: string;
+  /** Profiles that actually exist on disk. */
+  available: string[];
+  /** The currently configured profile value. */
+  current: string;
+}
+
+/** Returns the chosen profiles, or null/[] to skip that browser. */
+export type ProfileSelector = (request: ProfileSelectionRequest) => Promise<string[] | null>;
 
 export interface SyncTargets {
   bookmarks: boolean;
@@ -86,9 +104,147 @@ export function buildSyncConfig(config: CliConfig, options: SyncCommandOptions):
   };
 }
 
-export function runSyncCommand(context: CliContext, options: SyncCommandOptions = {}): number {
+/**
+ * When the configured profile does not exist for a browser, interactively list
+ * the profiles that do exist and persist the user's choice. The chosen names are
+ * merged into the configured comma-separated list, so other browsers keep their
+ * own profiles.
+ */
+async function ensureProfilesSelected(
+  context: CliContext,
+  options: SyncCommandOptions,
+): Promise<void> {
+  if (options.profile !== undefined || options.json) {
+    return;
+  }
+  const interactive =
+    options.selectProfiles !== undefined ||
+    (process.stdin.isTTY === true && process.stdout.isTTY === true);
+  if (!interactive) {
+    return;
+  }
+
+  const effective = buildSyncConfig(context.config, options);
+  const readers = createConfiguredBrowserReaders(effective, { platform: options.platform });
+  const select = options.selectProfiles ?? promptForProfiles;
+  let changed = false;
+
+  for (const reader of readers) {
+    if (reader.resolveProfiles(context.config.profile).length > 0) {
+      continue;
+    }
+    const available = reader.profiles();
+    if (available.length === 0) {
+      continue;
+    }
+
+    const selected = await select({
+      browser: reader.browser,
+      dataDir: reader.dataDir,
+      available,
+      current: context.config.profile,
+    });
+    if (!selected || selected.length === 0) {
+      continue;
+    }
+
+    const valid = selected.filter((name) => available.includes(name));
+    if (valid.length === 0) {
+      continue;
+    }
+    context.config.profile = addProfilesToSelection(context.config.profile, valid);
+    changed = true;
+  }
+
+  if (changed) {
+    saveConfigFile(context.dirs.configFile, context.config);
+    context.io.out(`Profile selection saved: ${context.config.profile}`);
+  }
+}
+
+/** Default interactive selector, used when stdin is a terminal. */
+export async function promptForProfiles(
+  request: ProfileSelectionRequest,
+): Promise<string[] | null> {
+  const output = process.stdout;
+  output.write(`\nNo ${request.browser} profile matched "${request.current}".\n`);
+  output.write(`Available ${request.browser} profiles in ${request.dataDir}:\n`);
+  request.available.forEach((name, index) => {
+    output.write(`  ${index + 1}) ${name}\n`);
+  });
+
+  const rl = readline.createInterface({ input: process.stdin, output });
+  try {
+    for (;;) {
+      const answer = await rl.question(
+        'Select profiles (comma-separated numbers or names, "all", empty to skip): ',
+      );
+      const parsed = parseProfileAnswer(answer, request.available);
+      if (parsed !== undefined) {
+        return parsed;
+      }
+      output.write('Invalid selection; please try again.\n');
+    }
+  } catch {
+    return null;
+  } finally {
+    rl.close();
+  }
+}
+
+/**
+ * Parses a prompt answer.
+ * Returns an empty result (`null`) to skip, or `undefined` for invalid input.
+ */
+export function parseProfileAnswer(
+  answer: string,
+  available: readonly string[],
+): string[] | null | undefined {
+  const trimmed = answer.trim();
+  if (trimmed.length === 0) {
+    return null;
+  }
+  if (trimmed.toLowerCase() === 'all') {
+    return [...available];
+  }
+
+  const selected: string[] = [];
+  for (const token of trimmed.split(',')) {
+    const value = token.trim();
+    if (value.length === 0) {
+      continue;
+    }
+    if (/^\d+$/.test(value)) {
+      const index = Number(value) - 1;
+      if (index < 0 || index >= available.length) {
+        return undefined;
+      }
+      const name = available[index];
+      if (!selected.includes(name)) {
+        selected.push(name);
+      }
+      continue;
+    }
+    if (!available.includes(value)) {
+      return undefined;
+    }
+    if (!selected.includes(value)) {
+      selected.push(value);
+    }
+  }
+
+  return selected.length > 0 ? selected : undefined;
+}
+
+export async function runSyncCommand(
+  context: CliContext,
+  options: SyncCommandOptions = {},
+): Promise<number> {
   const targets = resolveTargets(options);
   const strategy = resolveStrategy(options.strategy) ?? context.config.sync.strategy;
+
+  await ensureProfilesSelected(context, options);
+
   const config = buildSyncConfig(context.config, options);
 
   const report = runSync({

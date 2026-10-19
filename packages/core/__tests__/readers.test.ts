@@ -127,6 +127,15 @@ describe('createBrowserReader', () => {
     expect(reader.resolveProfiles('Profile 9')).toEqual([]);
   });
 
+  it('resolves comma-separated profile lists', () => {
+    const { dataDir } = setup();
+    const reader = createBrowserReader('chrome', { dataDir });
+    expect(reader.resolveProfiles('Default,Profile 1')).toEqual(['Default', 'Profile 1']);
+    expect(reader.resolveProfiles('Profile 1, Default')).toEqual(['Profile 1', 'Default']);
+    expect(reader.resolveProfiles('Default,Profile 9')).toEqual(['Default']);
+    expect(reader.resolveProfiles('Default,Default')).toEqual(['Default']);
+  });
+
   it('builds the expected file paths', () => {
     const { dataDir } = setup();
     const reader = createBrowserReader('chrome', { dataDir });

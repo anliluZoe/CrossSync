@@ -8,6 +8,7 @@ import { runConfigCommand } from './commands/config';
 import { runInstallCronCommand, runUninstallCronCommand } from './commands/cron';
 import { runExportCommand } from './commands/export';
 import { runLogsCommand } from './commands/logs';
+import { runProfilesCommand } from './commands/profiles';
 import { runStatusCommand } from './commands/status';
 import { runSyncCommand } from './commands/sync';
 
@@ -42,9 +43,14 @@ export function buildProgram(contextFactory: ContextFactory = createCliContext):
     .option('--verbose', 'enable debug logging')
     .option('--quiet', 'only log errors');
 
-  const withContext = (action: (context: CliContext) => number) => () => {
+  const withContext = (action: (context: CliContext) => number | Promise<number>) => async () => {
     const context = contextFactory(program.opts<GlobalOptions>());
-    process.exitCode = action(context);
+    try {
+      process.exitCode = await action(context);
+    } catch (error) {
+      context.io.err(error instanceof Error ? error.message : String(error));
+      process.exitCode = 1;
+    }
   };
 
   const syncCommand = program
@@ -54,7 +60,7 @@ export function buildProgram(contextFactory: ContextFactory = createCliContext):
     .option('--history', 'sync history only')
     .option('--all', 'sync bookmarks and history (default)')
     .option('--browser <name>', 'chrome, edge or all', 'all')
-    .option('--profile <name>', 'profile name or "all"')
+    .option('--profile <names>', 'profile name(s), comma-separated, or "all"')
     .option('--strategy <name>', 'merge (write back) or export (read only)')
     .option('--dry-run', 'show what would happen without touching any file')
     .option('--force', 'write bookmarks back even while the browser is running')
@@ -84,7 +90,7 @@ export function buildProgram(contextFactory: ContextFactory = createCliContext):
     .option('--format <format>', 'output format (json)', 'json')
     .option('--out <dir>', 'directory to write into')
     .option('--browser <name>', 'chrome, edge or all', 'all')
-    .option('--profile <name>', 'profile name or "all"')
+    .option('--profile <names>', 'profile name(s), comma-separated, or "all"')
     .option('--stdout', 'print the export instead of writing a file');
   exportCommand.action(withContext((context) => runExportCommand(context, exportCommand.opts())));
 
@@ -93,6 +99,20 @@ export function buildProgram(contextFactory: ContextFactory = createCliContext):
     .description('show browsers, profiles, backups and schedule state')
     .option('--json', 'print the status as JSON');
   statusCommand.action(withContext((context) => runStatusCommand(context, statusCommand.opts())));
+
+  const profilesCommand = program
+    .command('profiles')
+    .description('list available Chromium profiles or change the synced selection')
+    .option('--list', 'list profiles and the current selection (default)')
+    .option('--set <names>', 'replace the selection, e.g. "Default,Profile 11" or "all"')
+    .option('--add <names>', 'add profiles to the selection')
+    .option('--remove <names>', 'remove profiles from the selection')
+    .option('--all', 'select every available profile')
+    .option('--reset', 'reset the selection to "Default"')
+    .option('--browser <name>', 'limit listing to chrome, edge or all', 'all');
+  profilesCommand.action(
+    withContext((context) => runProfilesCommand(context, profilesCommand.opts())),
+  );
 
   const logsCommand = program
     .command('logs')
@@ -144,8 +164,8 @@ export function buildProgram(contextFactory: ContextFactory = createCliContext):
   return program;
 }
 
-export function run(argv: string[] = process.argv): void {
-  buildProgram().parse(argv);
+export async function run(argv: string[] = process.argv): Promise<void> {
+  await buildProgram().parseAsync(argv);
 }
 
 export { CLI_NAME, CLI_VERSION };
@@ -153,5 +173,5 @@ export const PACKAGE = 'crosssync';
 export const VERSION = CLI_VERSION;
 
 if (require.main === module) {
-  run();
+  void run();
 }

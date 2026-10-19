@@ -1,5 +1,11 @@
 import { describe, it, expect } from 'vitest';
-import { createDefaultConfig, resolveExportRetention, type CliConfig } from '../src/config';
+import {
+  addProfilesToSelection,
+  createDefaultConfig,
+  parseProfileList,
+  resolveExportRetention,
+  type CliConfig,
+} from '../src/config';
 import { DEFAULT_EXPORT_RETENTION } from '../src/constants';
 import { isCliConfig } from '../src/utils';
 
@@ -52,6 +58,26 @@ describe('createDefaultConfig', () => {
 
   it('falls back when a legacy config has no exports block', () => {
     expect(resolveExportRetention({})).toBe(DEFAULT_EXPORT_RETENTION);
+  });
+
+  it('parses comma-separated profile selections', () => {
+    expect(parseProfileList('Default, Profile 11,Profile 12')).toEqual([
+      'Default',
+      'Profile 11',
+      'Profile 12',
+    ]);
+    expect(parseProfileList(' Default , Default ')).toEqual(['Default']);
+    expect(parseProfileList('all')).toEqual(['all']);
+    expect(parseProfileList('')).toEqual([]);
+  });
+
+  it('merges profile selections while preserving all', () => {
+    expect(addProfilesToSelection('Default', ['Profile 11', 'Profile 12'])).toBe(
+      'Default,Profile 11,Profile 12',
+    );
+    expect(addProfilesToSelection('Default,Profile 11', ['Profile 11'])).toBe('Default,Profile 11');
+    expect(addProfilesToSelection('all', ['Profile 11'])).toBe('all');
+    expect(addProfilesToSelection('', ['Profile 11'])).toBe('Profile 11');
   });
 
   it('honours the logLevel and profile overrides', () => {

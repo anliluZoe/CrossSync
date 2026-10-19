@@ -125,7 +125,9 @@ export function runSync(options: SyncRunOptions): SyncReport {
   for (const reader of readers) {
     const profiles = reader.resolveProfiles(config.profile);
     if (profiles.length === 0) {
-      warnings.push(`No ${reader.browser} profile found under ${reader.dataDir}.`);
+      const available = reader.profiles();
+      const suffix = available.length > 0 ? ` Available: ${available.join(', ')}.` : '';
+      warnings.push(`No ${reader.browser} profile found under ${reader.dataDir}.${suffix}`);
       continue;
     }
 

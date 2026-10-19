@@ -10,6 +10,7 @@ import {
   isBookmarkFile,
   listProfiles,
   parseChromiumTime,
+  parseProfileList,
   readJsonFile,
   readSqliteCopy,
   resolveBrowserDataDir,
@@ -109,10 +110,11 @@ export function createBrowserReader(
 
   const resolveSelectedProfiles = (profile: string): string[] => {
     const found = profiles();
-    if (profile === 'all') {
+    if (profile.trim() === 'all') {
       return found;
     }
-    return found.includes(profile) ? [profile] : [];
+    const requested = parseProfileList(profile);
+    return requested.filter((name) => found.includes(name));
   };
 
   const readBookmarks = (profile: string): BookmarkSource => {

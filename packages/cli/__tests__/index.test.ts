@@ -37,6 +37,7 @@ describe('buildProgram', () => {
       'export',
       'install-cron',
       'logs',
+      'profiles',
       'status',
       'sync',
       'uninstall-cron',
@@ -74,6 +75,15 @@ describe('buildProgram', () => {
     ]);
     expect(optionsFor('status')).toEqual(['--json']);
     expect(optionsFor('logs')).toEqual(['--limit', '--level', '--clear', '--json']);
+    expect(optionsFor('profiles')).toEqual([
+      '--list',
+      '--set',
+      '--add',
+      '--remove',
+      '--all',
+      '--reset',
+      '--browser',
+    ]);
     expect(optionsFor('install-cron')).toEqual(['--expression', '--label', '--dry-run']);
     expect(optionsFor('uninstall-cron')).toEqual(['--label', '--dry-run']);
     expect(optionsFor('config')).toEqual(['--path', '--get', '--set', '--reset']);

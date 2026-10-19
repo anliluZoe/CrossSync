@@ -77,7 +77,22 @@ crosssync sync --bookmarks --force    # 浏览器运行中也强制写回
 crosssync sync --strategy export      # 完全只读
 crosssync sync --browser edge         # 只处理 Edge
 crosssync sync --profile all          # 处理所有 Chromium profile
+crosssync sync --profile "Default,Profile 11"   # 同时处理多个 profile
 crosssync sync --json                 # 机器可读报告
+```
+
+如果配置的 profile（默认 `Default`）在某个浏览器中不存在，交互式终端会列出可用的
+profile 让你按序号选择（支持多选），并自动保存选择。
+
+### `crosssync profiles`
+
+```bash
+crosssync profiles                       # 列出可用 profile 和当前选择
+crosssync profiles --set "Default,Profile 11,Profile 12"
+crosssync profiles --add "Profile 9"
+crosssync profiles --remove "Profile 11"
+crosssync profiles --all                 # 选择所有 profile
+crosssync profiles --reset               # 恢复为 Default
 ```
 
 ### `crosssync backup`

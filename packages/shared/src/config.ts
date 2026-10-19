@@ -58,6 +58,35 @@ export function resolveExportRetention(config: Pick<CliConfig, 'exports'>): numb
   return config.exports?.keep ?? DEFAULT_EXPORT_RETENTION;
 }
 
+/**
+ * Splits a configured `profile` value into unique names.
+ * A comma-separated list lets one config sync several profiles at once.
+ */
+export function parseProfileList(value: string): string[] {
+  const names: string[] = [];
+  for (const part of value.split(',')) {
+    const name = part.trim();
+    if (name.length > 0 && !names.includes(name)) {
+      names.push(name);
+    }
+  }
+  return names;
+}
+
+/** Adds profile names to a configured value, preserving the `all` sentinel. */
+export function addProfilesToSelection(current: string, additions: readonly string[]): string {
+  if (current.trim() === 'all') {
+    return 'all';
+  }
+  const names = parseProfileList(current);
+  for (const name of additions) {
+    if (name.trim().length > 0 && !names.includes(name.trim())) {
+      names.push(name.trim());
+    }
+  }
+  return names.join(',');
+}
+
 export interface CreateDefaultConfigOptions {
   dataDir: string;
   backupDir: string;
