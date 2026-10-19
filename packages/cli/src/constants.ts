@@ -1,5 +1,5 @@
 export const CLI_PACKAGE = 'crosssync';
-export const CLI_VERSION = '0.1.0';
+export const CLI_VERSION = '0.1.1';
 export const CLI_NAME = 'crosssync';
 export const CLI_DESCRIPTION = 'Cross-browser bookmark & history sync CLI (Chrome + Edge)';
 

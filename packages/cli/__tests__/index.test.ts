@@ -19,7 +19,7 @@ afterEach(() => {
 describe('crosssync', () => {
   it('exports the package metadata', () => {
     expect(PACKAGE).toBe('crosssync');
-    expect(VERSION).toBe('0.1.0');
+    expect(VERSION).toBe('0.1.1');
     expect(CLI_NAME).toBe('crosssync');
     expect(CLI_VERSION).toBe(VERSION);
   });
@@ -105,7 +105,7 @@ describe('buildProgram', () => {
     program.parse(['node', 'crosssync', '--home-dir', '/tmp/x', 'status']);
 
     expect(seen).toEqual({ homeDir: '/tmp/x' });
-    expect(io.stdout.join('\n')).toContain('CrossSync 0.1.0');
+    expect(io.stdout.join('\n')).toContain('CrossSync 0.1.1');
   });
 
   it('exposes --version', () => {
@@ -116,6 +116,6 @@ describe('buildProgram', () => {
     program.configureOutput({ writeOut: () => undefined });
 
     expect(() => program.parse(['node', 'crosssync', '--version'])).toThrow();
-    expect(program.version()).toBe('0.1.0');
+    expect(program.version()).toBe('0.1.1');
   });
 });
