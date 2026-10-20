@@ -40,6 +40,8 @@ export interface SyncRunOptions {
   env?: NodeJS.ProcessEnv;
   /** Overrides browser-running detection, used by tests. */
   browserRunning?: (browser: BrowserName) => boolean;
+  /** Overrides bookmark write-back, used by tests to simulate failures. */
+  writeBookmarks?: (filePath: string, file: BookmarkFile) => void;
 }
 
 export interface BrowserSyncOutcome {
@@ -342,21 +344,32 @@ function writeBackMergedBookmarks(
       continue;
     }
 
+    const write = options.writeBookmarks ?? writeBackBookmarks;
     for (const source of sources) {
-      writeBackBookmarks(source.filePath, {
-        roots: bookmarkMerge.roots,
-        version: source.file.version ?? 1,
-      });
-      logger.info('Wrote merged bookmarks', {
-        browser,
-        profile: source.profile,
-        file: source.filePath,
-      });
-    }
-
-    for (const outcome of browsers) {
-      if (outcome.browser === browser) {
-        outcome.writtenBack = true;
+      const outcome = browsers.find(
+        (candidate) => candidate.browser === browser && candidate.profile === source.profile,
+      );
+      try {
+        write(source.filePath, {
+          roots: bookmarkMerge.roots,
+          version: source.file.version ?? 1,
+        });
+        if (outcome) {
+          outcome.writtenBack = true;
+        }
+        logger.info('Wrote merged bookmarks', {
+          browser,
+          profile: source.profile,
+          file: source.filePath,
+        });
+      } catch (error) {
+        const reason = describeError(error);
+        if (outcome) {
+          outcome.skippedWriteBackReason = 'write-failed';
+        }
+        warnings.push(
+          `Could not write back ${browser}/${source.profile} bookmarks (${source.filePath}): ${reason}`,
+        );
       }
     }
   }

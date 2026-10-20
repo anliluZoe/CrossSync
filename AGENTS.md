@@ -79,7 +79,8 @@ Tests must never touch a real browser profile. They use `os.tmpdir()` fixtures, 
 
 - Browser extensions (Chrome/Edge) — removed on purpose
 - WebSocket server, client connection management, heartbeats, auth tokens — removed on purpose
-- Writing back to `History.sqlite` — Chromium owns that file while running
+- Writing back to `History.sqlite` during sync — Chromium owns that file while running
+  (the explicit `crosssync restore --history` recovery command is the only exception)
 - Reading passwords, cookies or tab data
 
 ## CI

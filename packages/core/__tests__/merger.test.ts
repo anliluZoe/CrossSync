@@ -153,6 +153,93 @@ describe('mergeBookmarkFiles', () => {
     expect(childIds(result.roots.synced as BookmarkNode)).toEqual(['10', '11']);
   });
 
+  it('matches by guid before url so a renamed bookmark keeps one identity', () => {
+    const older = url('2', 'Old name', 'https://old.example.com', '1000');
+    older.guid = 'guid-shared';
+    const newer = url('9', 'New name', 'https://new.example.com', '2000');
+    newer.guid = 'guid-shared';
+
+    const result = mergeBookmarkFiles([
+      { browser: 'chrome', file: bookmarkFile(folder('1', 'Bookmarks bar', [older])) },
+      { browser: 'edge', file: bookmarkFile(folder('1', 'Bookmarks bar', [newer])) },
+    ]);
+
+    const bookmarks = flattenBookmarks(result.roots.bookmark_bar).filter(
+      (entry) => entry.node.type === 'url',
+    );
+    expect(bookmarks).toHaveLength(1);
+    expect(bookmarks[0].node.url).toBe('https://new.example.com');
+    expect(bookmarks[0].node.id).toBe('9');
+  });
+
+  it('never matches bookmarks by their profile-local ids', () => {
+    // Chrome and Edge both allocate ids from 1, so the same id usually refers
+    // to different bookmarks in each profile.
+    const chrome = bookmarkFile(
+      folder('1', 'Bookmarks bar', [
+        url('2', 'Chrome bookmark', 'https://chrome.example.com', '2000000'),
+        folder('3', 'Chrome folder', [url('4', 'Nested', 'https://nested.example.com', '1500000')]),
+      ]),
+    );
+    const edge = bookmarkFile(
+      folder('1', 'Bookmarks bar', [
+        url('2', 'Edge bookmark', 'https://edge.example.com', '2500000'),
+        url('3', 'Edge url', 'https://edge2.example.com', '2600000'),
+      ]),
+    );
+
+    const result = mergeBookmarkFiles([
+      { browser: 'chrome', file: chrome },
+      { browser: 'edge', file: edge },
+    ]);
+
+    const entries = flattenBookmarks(result.roots.bookmark_bar);
+    const urls = entries
+      .filter((entry) => entry.node.type === 'url')
+      .map((entry) => entry.node.url);
+    expect(urls).toEqual(
+      expect.arrayContaining([
+        'https://chrome.example.com',
+        'https://edge.example.com',
+        'https://edge2.example.com',
+        'https://nested.example.com',
+      ]),
+    );
+    expect(
+      entries.filter(
+        (entry) => entry.node.type === 'folder' && entry.node.name === 'Chrome folder',
+      ),
+    ).toHaveLength(1);
+
+    const ids = entries.map((entry) => entry.node.id);
+    expect(new Set(ids).size).toBe(ids.length);
+    expect(result.stats.added).toBe(2);
+    expect(result.conflicts).toHaveLength(0);
+  });
+
+  it('renumbers a folder whose id collides with an added url', () => {
+    const chrome = bookmarkFile(
+      folder('1', 'Bookmarks bar', [
+        folder('5', 'Chrome folder', [url('6', 'Nested', 'https://n.example.com')]),
+      ]),
+    );
+    const edge = bookmarkFile(
+      folder('1', 'Bookmarks bar', [url('5', 'Edge url', 'https://e.example.com')]),
+    );
+
+    const result = mergeBookmarkFiles([
+      { browser: 'chrome', file: chrome },
+      { browser: 'edge', file: edge },
+    ]);
+
+    const entries = flattenBookmarks(result.roots.bookmark_bar);
+    const folderEntry = entries.find((entry) => entry.node.name === 'Chrome folder');
+    expect(folderEntry?.node.type).toBe('folder');
+    expect(entries.some((entry) => entry.node.url === 'https://e.example.com')).toBe(true);
+    const ids = entries.map((entry) => entry.node.id);
+    expect(new Set(ids).size).toBe(ids.length);
+  });
+
   it('throws without any input', () => {
     expect(() => mergeBookmarkFiles([])).toThrow(/at least one input/);
   });

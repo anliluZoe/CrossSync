@@ -5,6 +5,9 @@
 通过直接读取本地浏览器数据文件实现：**不需要浏览器扩展，不需要常驻进程，也没有实时同步**。
 一次运行就是「读取 → 备份 → 合并 → 写回书签 → 导出 JSON」。
 
+跨设备同步不经过 CrossSync 的任何服务器，而是依赖浏览器自己的账号同步：合并结果写回本机
+`Bookmarks` 后，Chrome / Edge 在下次启动时把它上传到已登录的账号。
+
 ```bash
 crosssync sync --bookmarks     # 读取两边书签，按 id + date_added 合并后写回
 crosssync install-cron         # 装一个每天 09:00 的定时任务
@@ -14,7 +17,7 @@ crosssync status               # 看看浏览器、备份和定时任务的状�
 ## 特性
 
 - **纯 CLI**：没有扩展、没有 WebSocket、没有 token
-- **双向合并书签**：按 `id` 递归归并，同 id 冲突保留 `date_added` 更新的那条
+- **双向合并书签**：按 `guid` → 名称/URL → URL 递归匹配（不依赖各浏览器本地的 `id`），同一条冲突保留 `date_added` 更新的那条
 - **历史只读导出**：SQLite 复制后查询，按 URL 去重合并，绝不写回 `History.sqlite`
 - **写前必备份**：备份失败则整次同步立即中止
 - **不会踩坏浏览器**：写回前检测浏览器是否运行；写回时移除过期 `checksum`
@@ -83,7 +86,7 @@ crosssync sync --json                 # 机器可读报告
 1. 定位 Chrome / Edge 的 `Bookmarks` 与 `History`
 2. **备份**两边原始文件到 `~/.crosssync/backups/<时间戳>/`（失败即中止）
 3. 读取（历史通过临时副本读取 SQLite）
-4. 合并（书签按 `id` + `date_added`；历史按 `url`）
+4. 合并（书签按 `guid`/URL + `date_added`；历史按 `url`）
 5. 写回书签（浏览器运行中默认跳过），并按需导出 JSON
 
 ### Profile 选择
@@ -115,7 +118,14 @@ crosssync profiles --reset                          # 恢复为 Default
 crosssync backup                     # 立即备份所有书签/历史文件
 crosssync backup --list              # 列出已有备份
 crosssync backup --prune --keep 10   # 只保留最近 10 份
+crosssync restore                    # 从最近一次备份恢复书签
+crosssync restore 20261019-101603    # 恢复指定备份
+crosssync restore --history          # 同时恢复 History 数据库
+crosssync restore --dry-run          # 只预览恢复计划
 ```
+
+`restore` 默认只恢复书签文件；写回 `History` 需要显式加 `--history`。恢复前会自动把
+当前文件再备份一次，因此恢复本身也可以撤销。浏览器运行中默认跳过，`--force` 可覆盖。
 
 ### 导出
 
@@ -149,6 +159,46 @@ crosssync uninstall-cron
 | macOS | launchd | `~/Library/LaunchAgents/com.crosssync.sync.plist` |
 | Linux | systemd user timer | `~/.config/systemd/user/crosssync-sync.{service,timer}` |
 | Linux（无 systemd） | crontab | 带 `# crosssync` 标记的条目 |
+
+### 跨设备同步（依赖浏览器账号）
+
+CrossSync 只写本机的 `Bookmarks` 文件，**不连接任何在线服务**。另一台电脑上的书签来自
+浏览器自己的账号同步：Chrome 同步到 Google 账号，Edge 同步到 Microsoft 账号。
+
+要让 CrossSync 合并出的书签真正进入账号，需要同时满足：
+
+1. **写回时浏览器已完全退出。** 浏览器运行中 CrossSync 默认跳过写回；此时不要用
+   `--force` 强制写入——Chrome 退出时会用内存中的书签覆盖文件。
+2. **写回后打开对应 profile 的浏览器。** Chrome / Edge 在启动时发现本地有未同步的书签，
+   会把它们作为本地变更提交到账号。
+3. **两台电脑登录同一账号并开启书签同步。** 可在 `chrome://settings/syncSetup` 检查；
+   `chrome://sync-internals` 中能看到 Bookmarks 的提交记录。
+
+推荐的手动流程：
+
+```bash
+# 1. 完全退出 Chrome / Edge
+crosssync sync --bookmarks
+# 2. 重新打开需要同步的 profile，等待一次同步完成
+```
+
+推荐的无人工干预流程（方式一）：把定时任务安排在浏览器肯定关闭的时段。
+
+```bash
+# 例如每天凌晨 03:00
+crosssync install-cron --expression "0 3 * * *"
+```
+
+到点后 CrossSync 写回书签；下次打开浏览器时由浏览器上传到账号，另一台电脑随后收到。
+
+注意事项：
+
+- 定时任务要求到点时机器处于开机状态。Windows 任务计划程序默认不会补跑错过的任务。
+- 合并结果会写进所有选中的 profile，但每个 profile 只在被打开时才会上传到它自己的账号。
+  想让某个账号拿到全部书签，请在同步后打开该账号对应的 profile。
+- 只有**新增书签**能可靠上传。对已有书签的改名、移动、删除是文件层面的修改，浏览器启动时
+  不一定会当作本地变更提交，且可能以服务器版本为准——这是浏览器账号同步的机制限制。
+- 不需要 `import` 或手动导出文件；`crosssync export` 只是只读导出，不参与跨设备同步。
 
 ### 配置
 

@@ -285,7 +285,9 @@ export async function runSyncCommand(
     }
   }
 
-  const failed = report.warnings.some((warning) => warning.startsWith('Backup failed'));
+  const failed = report.warnings.some(
+    (warning) => warning.startsWith('Backup failed') || warning.startsWith('Could not write back'),
+  );
   return failed ? 1 : 0;
 }
 

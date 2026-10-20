@@ -38,6 +38,7 @@ describe('buildProgram', () => {
       'install-cron',
       'logs',
       'profiles',
+      'restore',
       'status',
       'sync',
       'uninstall-cron',
@@ -84,6 +85,7 @@ describe('buildProgram', () => {
       '--reset',
       '--browser',
     ]);
+    expect(optionsFor('restore')).toEqual(['--history', '--force', '--dry-run']);
     expect(optionsFor('install-cron')).toEqual(['--expression', '--label', '--dry-run']);
     expect(optionsFor('uninstall-cron')).toEqual(['--label', '--dry-run']);
     expect(optionsFor('config')).toEqual(['--path', '--get', '--set', '--reset']);

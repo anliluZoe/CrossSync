@@ -9,6 +9,7 @@ import { runInstallCronCommand, runUninstallCronCommand } from './commands/cron'
 import { runExportCommand } from './commands/export';
 import { runLogsCommand } from './commands/logs';
 import { runProfilesCommand } from './commands/profiles';
+import { runRestoreCommand } from './commands/restore';
 import { runStatusCommand } from './commands/status';
 import { runSyncCommand } from './commands/sync';
 
@@ -80,6 +81,25 @@ export function buildProgram(contextFactory: ContextFactory = createCliContext):
         list: options.list,
         prune: options.prune,
         keep: options.keep === undefined ? undefined : Number(options.keep),
+      });
+    }),
+  );
+
+  const restoreCommand = program
+    .command('restore')
+    .description('restore browser files from a CrossSync backup')
+    .argument('[backup-id]', 'backup id to restore (defaults to the newest)')
+    .option('--history', 'also restore History databases')
+    .option('--force', 'restore even while the browser is running')
+    .option('--dry-run', 'show what would be restored without writing');
+  restoreCommand.action(
+    withContext((context) => {
+      const options = restoreCommand.opts();
+      return runRestoreCommand(context, {
+        id: restoreCommand.args[0],
+        history: options.history,
+        force: options.force,
+        dryRun: options.dryRun,
       });
     }),
   );

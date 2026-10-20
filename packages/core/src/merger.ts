@@ -16,7 +16,7 @@ export interface BookmarkMergeInput {
 export interface BookmarkMergeStats {
   /** Total nodes in the merged tree, including root folders. */
   total: number;
-  /** Nodes taken from a later browser because the accumulated tree lacked the id. */
+  /** Nodes taken from a later browser because the accumulated tree lacked them. */
   added: number;
   /** Nodes replaced by a later browser whose `date_added` was newer. */
   updated: number;
@@ -56,18 +56,27 @@ export interface HistoryMergeResult {
   stats: HistoryMergeStats;
 }
 
-/** Node wrapped with the browser it came from and an id-indexed child map. */
+/** Node wrapped with the browser it came from. */
 interface TrackedNode {
   node: BookmarkNode;
   origin: BrowserName;
-  children: Map<string, TrackedNode>;
+  children: TrackedNode[];
 }
 
 /**
  * Merges bookmark files coming from several Chromium browsers.
  *
- * Nodes are matched by `id`; when both browsers know the same id, the node with
- * the newer `date_added` wins (ties keep the earlier input's node).
+ * Chromium bookmark ids are only unique inside one profile, so they must never
+ * be used to match bookmarks across browsers. Nodes are matched by, in order:
+ *
+ * 1. `guid` (stable identity; shared between files CrossSync has written)
+ * 2. type + name (url nodes additionally compare their URL)
+ * 3. the URL of url nodes
+ *
+ * When both browsers know the same node, the version with the newer
+ * `date_added` wins. Local ids that still collide after merging are renumbered,
+ * and duplicate guids are dropped, so the merged tree is safe to write back to
+ * every browser.
  */
 export function mergeBookmarkFiles(inputs: BookmarkMergeInput[]): BookmarkMergeResult {
   if (inputs.length === 0) {
@@ -106,6 +115,11 @@ export function mergeBookmarkFiles(inputs: BookmarkMergeInput[]): BookmarkMergeR
   if (roots.synced) {
     mergedRoots.synced = toBookmarkNode(roots.synced);
   }
+
+  // The same merged tree is written back to every browser, so ids must be
+  // unique within it even when the source profiles used overlapping id ranges.
+  renumberDuplicateIds(mergedRoots, highestNumericId(inputs));
+  dedupeGuids(mergedRoots);
 
   stats.total =
     countBookmarks(mergedRoots.bookmark_bar) +
@@ -149,17 +163,17 @@ export function mergeHistory(inputs: HistoryMergeInput[]): HistoryMergeResult {
 }
 
 function toTrackedNode(node: BookmarkNode, origin: BrowserName): TrackedNode {
-  const children = new Map<string, TrackedNode>();
-  for (const child of node.children ?? []) {
-    children.set(child.id, toTrackedNode(child, origin));
-  }
-  return { node, origin, children };
+  return {
+    node,
+    origin,
+    children: (node.children ?? []).map((child) => toTrackedNode(child, origin)),
+  };
 }
 
 function toBookmarkNode(tracked: TrackedNode): BookmarkNode {
   const node: BookmarkNode = { ...tracked.node };
   if (node.type === 'folder') {
-    node.children = [...tracked.children.values()].map(toBookmarkNode);
+    node.children = tracked.children.map(toBookmarkNode);
   }
   return node;
 }
@@ -178,17 +192,11 @@ function mergeTrackedNode(
     if (incomingDateAdded === baseDateAdded) {
       stats.identical += 1;
     }
-    const children = new Map(winner.children);
-    for (const [id, incomingChild] of incoming.children) {
-      const existing = children.get(id);
-      if (existing) {
-        children.set(id, mergeTrackedNode(existing, incomingChild, stats, conflicts));
-      } else {
-        children.set(id, incomingChild);
-        stats.added += 1;
-      }
-    }
-    return { node: winner.node, origin: winner.origin, children };
+    return {
+      node: winner.node,
+      origin: winner.origin,
+      children: mergeChildren(base.children, incoming.children, stats, conflicts),
+    };
   }
 
   if (incomingDateAdded === baseDateAdded) {
@@ -212,4 +220,171 @@ function mergeTrackedNode(
     return incoming;
   }
   return base;
+}
+
+/** Matches the children of two versions of the same folder. */
+function mergeChildren(
+  baseChildren: TrackedNode[],
+  incomingChildren: TrackedNode[],
+  stats: BookmarkMergeStats,
+  conflicts: BookmarkMergeConflict[],
+): TrackedNode[] {
+  const merged = [...baseChildren];
+  const matched = new Array<boolean>(merged.length).fill(false);
+
+  const takeMatch = (
+    incoming: TrackedNode,
+    same: (base: TrackedNode, candidate: TrackedNode) => boolean,
+  ): boolean => {
+    for (let index = 0; index < merged.length; index += 1) {
+      if (matched[index] || !same(merged[index], incoming)) {
+        continue;
+      }
+      matched[index] = true;
+      merged[index] = mergeTrackedNode(merged[index], incoming, stats, conflicts);
+      return true;
+    }
+    return false;
+  };
+
+  // Compare by guid first across all pending nodes, then by content, and only
+  // then fall back to the URL, so a renamed bookmark still matches its peer.
+  const byContent: TrackedNode[] = [];
+  for (const incoming of incomingChildren) {
+    if (!takeMatch(incoming, sameGuid)) {
+      byContent.push(incoming);
+    }
+  }
+
+  const byUrl: TrackedNode[] = [];
+  for (const incoming of byContent) {
+    if (!takeMatch(incoming, sameContent)) {
+      byUrl.push(incoming);
+    }
+  }
+
+  const added: TrackedNode[] = [];
+  for (const incoming of byUrl) {
+    if (!takeMatch(incoming, sameUrl)) {
+      added.push(incoming);
+    }
+  }
+
+  stats.added += added.length;
+  merged.push(...added);
+  return merged;
+}
+
+function sameGuid(base: TrackedNode, incoming: TrackedNode): boolean {
+  return (
+    base.node.type === incoming.node.type &&
+    typeof base.node.guid === 'string' &&
+    base.node.guid.length > 0 &&
+    base.node.guid === incoming.node.guid
+  );
+}
+
+function sameContent(base: TrackedNode, incoming: TrackedNode): boolean {
+  if (base.node.type !== incoming.node.type) {
+    return false;
+  }
+  if (base.node.type === 'folder') {
+    return base.node.name === incoming.node.name;
+  }
+  const baseUrl = normalizedUrl(base.node);
+  return (
+    baseUrl.length > 0 &&
+    baseUrl === normalizedUrl(incoming.node) &&
+    base.node.name === incoming.node.name
+  );
+}
+
+function sameUrl(base: TrackedNode, incoming: TrackedNode): boolean {
+  if (base.node.type !== 'url' || incoming.node.type !== 'url') {
+    return false;
+  }
+  const baseUrl = normalizedUrl(base.node);
+  return baseUrl.length > 0 && baseUrl === normalizedUrl(incoming.node);
+}
+
+function normalizedUrl(node: BookmarkNode): string {
+  return (node.url ?? '').trim();
+}
+
+/** Highest numeric id across every input, used as the renumbering starting point. */
+function highestNumericId(inputs: BookmarkMergeInput[]): number {
+  let highest = 0;
+  const visit = (node: BookmarkNode): void => {
+    const id = Number(node.id);
+    if (Number.isInteger(id) && id > highest) {
+      highest = id;
+    }
+    for (const child of node.children ?? []) {
+      visit(child);
+    }
+  };
+  for (const input of inputs) {
+    for (const key of BOOKMARK_ROOT_KEYS) {
+      const root = input.file.roots[key];
+      if (root) {
+        visit(root);
+      }
+    }
+  }
+  return highest;
+}
+
+/** Renumbers nodes whose id is already used, starting above every input id. */
+function renumberDuplicateIds(roots: BookmarkRoots, highest: number): void {
+  const seen = new Set<string>();
+  let next = highest + 1;
+
+  const visit = (node: BookmarkNode): void => {
+    if (seen.has(node.id)) {
+      while (seen.has(String(next))) {
+        next += 1;
+      }
+      node.id = String(next);
+      next += 1;
+    }
+    seen.add(node.id);
+    for (const child of node.children ?? []) {
+      visit(child);
+    }
+  };
+
+  for (const key of BOOKMARK_ROOT_KEYS) {
+    const root = roots[key];
+    if (root) {
+      visit(root);
+    }
+  }
+}
+
+/**
+ * Drops duplicate guids: Chromium regenerates a missing guid, while keeping a
+ * duplicate could make the browser discard the bookmark.
+ */
+function dedupeGuids(roots: BookmarkRoots): void {
+  const seen = new Set<string>();
+
+  const visit = (node: BookmarkNode): void => {
+    if (node.guid) {
+      if (seen.has(node.guid)) {
+        delete node.guid;
+      } else {
+        seen.add(node.guid);
+      }
+    }
+    for (const child of node.children ?? []) {
+      visit(child);
+    }
+  };
+
+  for (const key of BOOKMARK_ROOT_KEYS) {
+    const root = roots[key];
+    if (root) {
+      visit(root);
+    }
+  }
 }

@@ -119,6 +119,28 @@ describe('runSync - bookmarks', () => {
     expect(report.browsers.every((outcome) => outcome.writtenBack)).toBe(true);
   });
 
+  it('reports a failed write-back and keeps syncing the other browser', () => {
+    const { layout, report } = runBookmarkSync({
+      writeBookmarks: (filePath, file) => {
+        if (filePath.includes(`${path.sep}chrome${path.sep}`)) {
+          throw new Error('file is locked');
+        }
+        writeBackBookmarks(filePath, file);
+      },
+    });
+
+    const chrome = report.browsers.find((outcome) => outcome.browser === 'chrome');
+    const edge = report.browsers.find((outcome) => outcome.browser === 'edge');
+    expect(chrome?.writtenBack).toBe(false);
+    expect(chrome?.skippedWriteBackReason).toBe('write-failed');
+    expect(edge?.writtenBack).toBe(true);
+    expect(report.warnings.join('\n')).toContain('Could not write back chrome/Default');
+    expect(report.warnings.join('\n')).toContain('file is locked');
+    expect(
+      barChildIds(readBookmarkFile(path.join(layout.edgeDataDir, 'Default', 'Bookmarks'))),
+    ).toEqual(['2', '7']);
+  });
+
   it('removes the stale checksum from the written files', () => {
     const { layout } = runBookmarkSync();
     const chrome = readBookmarkFile(path.join(layout.chromeDataDir, 'Default', 'Bookmarks'));
