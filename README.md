@@ -286,6 +286,75 @@ MIT
 
 ---
 
+## CI/CD
+
+### GitHub Actions
+
+CrossSync 使用 GitHub Actions 进行自动化构建和发布。
+
+#### 1. CI — 持续集成
+
+**触发**: Push / Pull Request 到 main/master
+
+**执行**:
+- ✅ TypeScript 类型检查
+- ✅ 单元测试
+- ✅ 构建所有包
+- ✅ ESLint 代码检查
+- ✅ **构建 Electron 应用** ⭐
+- ✅ CLI 冒烟测试
+
+查看: [`.github/workflows/ci.yml`](.github/workflows/ci.yml)
+
+#### 2. Build Electron App — PR 打包
+
+**触发**: Push / Pull Request
+
+**执行**:
+- ✅ 构建 Electron 应用
+- ✅ 打包 Linux 版本
+- ✅ 上传 Artifacts (7天有效)
+- ✅ PR 自动评论构建信息
+
+查看: [`.github/workflows/build-electron.yml`](.github/workflows/build-electron.yml)
+
+#### 3. Release Electron App — 自动发布
+
+**触发**: 创建版本标签或手动触发
+
+**执行**:
+- ✅ 构建 macOS, Windows, Linux
+- ✅ 生成安装包 (dmg, exe, AppImage, deb)
+- ✅ 自动发布到 GitHub Releases
+- ✅ 生成 Release Notes
+
+**使用方法**:
+
+```bash
+# 1. 更新版本号
+# 编辑 electron-app/package.json
+
+# 2. 创建标签
+git tag v1.0.0
+git push origin v1.0.0
+
+# 3. GitHub Actions 自动发布 ✨
+```
+
+查看: [`.github/workflows/release-electron.yml`](.github/workflows/release-electron.yml)
+
+#### 4. Publish to npm — CLI 发布
+
+**触发**: 手动触发 (workflow_dispatch)
+
+**执行**:
+- ✅ 验证版本
+- ✅ 发布到 npm registry
+
+查看: [`.github/workflows/publish.yml`](.github/workflows/publish.yml)
+
+---
+
 ## 🖥️ 桌面应用（实验性）
 
 除了 CLI，CrossSync 还提供了一个 **Electron 桌面应用**，带有图形界面：

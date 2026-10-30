@@ -14,7 +14,11 @@
     "lint": "turbo run lint",
     "typecheck": "turbo run typecheck",
     "dev": "turbo run dev --parallel",
-    "format": "prettier --write ."
+    "format": "prettier --write .",
+    "build:all": "pnpm build && cd electron-app && pnpm build",
+    "electron:dev": "cd electron-app && pnpm dev",
+    "electron:build": "cd electron-app && pnpm build",
+    "electron:package": "cd electron-app && pnpm exec electron-builder"
   },
   "devDependencies": {
     "@types/node": "^20.0.0",

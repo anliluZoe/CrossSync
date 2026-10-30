@@ -42,6 +42,13 @@ jobs:
       - name: Lint
         run: pnpm lint
 
+      # Build Electron app (but don't package yet)
+      - name: Build Electron app
+        run: cd electron-app && pnpm build
+        env:
+          # Skip Electron binary download during build
+          ELECTRON_SKIP_BINARY_DOWNLOAD: true
+
       # Smoke test the built CLI without touching any real browser data.
       - name: CLI smoke test
         run: |
@@ -49,3 +56,9 @@ jobs:
           node packages/cli/dist/index.js --home-dir "$RUNNER_TEMP/crosssync-ci" config --path
           node packages/cli/dist/index.js --home-dir "$RUNNER_TEMP/crosssync-ci" install-cron --dry-run
           node packages/cli/dist/index.js --home-dir "$RUNNER_TEMP/crosssync-ci" status --json
+
+      - name: Verify Electron app build
+        run: |
+          echo "✅ Electron app built successfully"
+          ls -lh electron-app/out/main/index.js
+          ls -lh electron-app/out/renderer/index.html
