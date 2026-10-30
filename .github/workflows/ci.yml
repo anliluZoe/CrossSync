@@ -26,28 +26,31 @@ jobs:
           node-version: 22
           cache: pnpm
 
-      # Install only necessary packages (exclude CLI to skip better-sqlite3)
+      # Install dependencies (skip better-sqlite3 compilation)
       - name: Install dependencies
-        run: |
-          pnpm install --frozen-lockfile --ignore-scripts
+        run: pnpm install --frozen-lockfile --ignore-scripts
         env:
           ELECTRON_SKIP_BINARY_DOWNLOAD: true
+          npm_config_build_from_source: false
 
-      # Build shared and core packages
+      # Build shared and core (TypeScript only, no native deps needed)
       - name: Build shared and core packages
         run: |
-          pnpm --filter @crosssync/shared build
-          pnpm --filter @crosssync/core build
+          cd packages/shared && pnpm build
+          cd ../core && pnpm build
+        working-directory: ${{ github.workspace }}
 
       - name: Type check (shared & core)
         run: |
-          pnpm --filter @crosssync/shared typecheck
-          pnpm --filter @crosssync/core typecheck
+          cd packages/shared && pnpm typecheck
+          cd ../core && pnpm typecheck
+        working-directory: ${{ github.workspace }}
 
       - name: Run tests (shared & core)
         run: |
-          pnpm --filter @crosssync/shared test
-          pnpm --filter @crosssync/core test
+          cd packages/shared && pnpm test
+          cd ../core && pnpm test
+        working-directory: ${{ github.workspace }}
 
       # Build Electron app
       - name: Build Electron app
