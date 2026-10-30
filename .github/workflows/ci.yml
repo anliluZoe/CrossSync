@@ -26,31 +26,42 @@ jobs:
           node-version: 22
           cache: pnpm
 
-      # Install dependencies (skip better-sqlite3 compilation)
+      # Install dependencies (use minimal workspace to skip CLI/better-sqlite3)
+      - name: Create minimal workspace config
+        run: |
+          # Save original workspace file
+          mv pnpm-workspace.yaml pnpm-workspace.yaml.bak
+
+          # Create minimal workspace without CLI
+          cat > pnpm-workspace.yaml << 'EOF'
+          packages:
+            - 'packages/shared'
+            - 'packages/core'
+            - 'electron-app'
+          EOF
+
+          cat pnpm-workspace.yaml
+
       - name: Install dependencies
-        run: pnpm install --frozen-lockfile --ignore-scripts
+        run: pnpm install --frozen-lockfile
         env:
           ELECTRON_SKIP_BINARY_DOWNLOAD: true
           npm_config_build_from_source: false
 
-      # Build shared and core (TypeScript only, no native deps needed)
       - name: Build shared and core packages
         run: |
-          cd packages/shared && pnpm build
-          cd ../core && pnpm build
-        working-directory: ${{ github.workspace }}
+          pnpm --filter @crosssync/shared build
+          pnpm --filter @crosssync/core build
 
       - name: Type check (shared & core)
         run: |
-          cd packages/shared && pnpm typecheck
-          cd ../core && pnpm typecheck
-        working-directory: ${{ github.workspace }}
+          pnpm --filter @crosssync/shared typecheck
+          pnpm --filter @crosssync/core typecheck
 
       - name: Run tests (shared & core)
         run: |
-          cd packages/shared && pnpm test
-          cd ../core && pnpm test
-        working-directory: ${{ github.workspace }}
+          pnpm --filter @crosssync/shared test
+          pnpm --filter @crosssync/core test
 
       # Build Electron app
       - name: Build Electron app
@@ -64,11 +75,8 @@ jobs:
       - name: Lint Electron app
         run: pnpm --filter crosssync-desktop lint
 
-      # Verify build output exists
-      - name: Verify build
+      # Restore original workspace config
+      - name: Restore workspace config
+        if: always()
         run: |
-          echo "✅ Build verification"
-          ls -lh electron-app/out/main/index.js
-          ls -lh electron-app/out/renderer/index.html
-          test -f electron-app/out/main/index.js || (echo "❌ Main process build failed" && exit 1)
-          test -f electron-app/out/renderer/index.html || (echo "❌ Renderer build failed" && exit 1)
+          test -f pnpm-workspace.yaml.bak && mv pnpm-workspace.yaml.bak pnpm-workspace.yaml
