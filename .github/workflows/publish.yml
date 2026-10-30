@@ -3,13 +3,26 @@ name: Publish to npm
 on:
   workflow_dispatch:
     inputs:
+      bump:
+        description: Version bump applied before publishing (auto = bump unless package.json is already ahead)
+        type: choice
+        options:
+          - auto
+          - patch
+          - minor
+          - major
+        default: auto
       dry_run:
         description: Run npm publish --dry-run without uploading
         type: boolean
         default: false
+      commit_version:
+        description: Commit the bumped version back to the branch after publishing
+        type: boolean
+        default: true
 
 permissions:
-  contents: read
+  contents: write
 
 concurrency:
   group: npm-publish
@@ -36,24 +49,32 @@ jobs:
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
 
+      - name: Determine next version
+        id: version
+        run: |
+          NAME=$(node -p "require('./packages/cli/package.json').name")
+          LOCAL=$(node -p "require('./packages/cli/package.json').version")
+          PUBLISHED=$(npm view "$NAME" version 2>/dev/null || true)
+          BUMP="${{ inputs.bump }}"
+
+          NEXT=$(node .github/scripts/next-version.mjs ./packages/cli/package.json "$PUBLISHED" "$BUMP" --write)
+
+          echo "name=$NAME" >> "$GITHUB_OUTPUT"
+          echo "previous=$LOCAL" >> "$GITHUB_OUTPUT"
+          echo "version=$NEXT" >> "$GITHUB_OUTPUT"
+          echo "$NAME: $LOCAL -> $NEXT (published: ${PUBLISHED:-none}, bump: $BUMP)"
+
+          if npm view "$NAME@$NEXT" version >/dev/null 2>&1; then
+            echo "::error::$NAME@$NEXT is already published. Choose a larger bump type."
+            exit 1
+          fi
+
       - name: Verify packages
         run: |
           pnpm lint
           pnpm typecheck
           pnpm test
           pnpm build
-
-      - name: Read and check package version
-        id: package
-        run: |
-          NAME=$(node -p "require('./packages/cli/package.json').name")
-          VERSION=$(node -p "require('./packages/cli/package.json').version")
-          echo "name=$NAME" >> "$GITHUB_OUTPUT"
-          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
-          if npm view "$NAME@$VERSION" version >/dev/null 2>&1; then
-            echo "::error::$NAME@$VERSION is already published. Bump the version first."
-            exit 1
-          fi
 
       - name: Require NPM_TOKEN
         if: ${{ !inputs.dry_run }}
@@ -77,6 +98,23 @@ jobs:
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
 
+      - name: Commit version bump
+        if: ${{ !inputs.dry_run && inputs.commit_version && github.ref_type == 'branch' }}
+        run: |
+          if git diff --quiet -- packages/cli/package.json; then
+            echo "Version unchanged, nothing to commit."
+            exit 0
+          fi
+
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add packages/cli/package.json
+          git commit -m "chore(release): ${{ steps.version.outputs.name }}@${{ steps.version.outputs.version }}"
+
+          if ! git push origin "HEAD:$GITHUB_REF_NAME"; then
+            echo "::warning::Published ${{ steps.version.outputs.name }}@${{ steps.version.outputs.version }} but failed to push the version bump. Commit packages/cli/package.json manually."
+          fi
+
       - name: Write summary
         run: |
           {
@@ -84,7 +122,9 @@ jobs:
             echo ""
             echo "| Field | Value |"
             echo "| --- | --- |"
-            echo "| Package | \`${{ steps.package.outputs.name }}\` |"
-            echo "| Version | \`${{ steps.package.outputs.version }}\` |"
+            echo "| Package | \`${{ steps.version.outputs.name }}\` |"
+            echo "| Version | \`${{ steps.version.outputs.previous }}\` -> \`${{ steps.version.outputs.version }}\` |"
+            echo "| Bump | \`${{ inputs.bump }}\` |"
             echo "| Dry run | \`${{ inputs.dry_run }}\` |"
+            echo "| Committed | \`${{ !inputs.dry_run && inputs.commit_version && github.ref_type == 'branch' }}\` |"
           } >> "$GITHUB_STEP_SUMMARY"

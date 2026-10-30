@@ -92,3 +92,11 @@ Tests must never touch a real browser profile. They use `os.tmpdir()` fixtures, 
 3. `pnpm test`
 4. `pnpm build`
 5. `pnpm lint`
+
+## npm publishing
+
+`.github/workflows/publish.yml` is manual-only (`workflow_dispatch`). It reads the latest version
+from the npm registry and picks the next one automatically (`auto` / `patch` / `minor` / `major`),
+writes it into `packages/cli/package.json`, publishes, then commits the bump back to the branch.
+`auto` publishes the local version unchanged when it is already ahead of npm, so manual bumps still
+work. It never pushes a git tag: `v*` tags trigger `release-electron.yml`.

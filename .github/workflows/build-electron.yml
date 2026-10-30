@@ -29,10 +29,8 @@ jobs:
           ELECTRON_SKIP_BINARY_DOWNLOAD: true
           npm_config_build_from_source: false
 
-      - name: Build Electron app
-        run: |
-          cd electron-app
-          pnpm build
+      - name: Build Electron app and workspace packages
+        run: pnpm --filter crosssync-desktop... build
         env:
           ELECTRON_SKIP_BINARY_DOWNLOAD: true
 
@@ -56,10 +54,14 @@ jobs:
         with:
           script: |
             const fs = require('fs');
-            const path = 'electron-app/out/renderer/assets/index-CHXwWPdQ.js';
+            const path = require('path');
+            const assetsDir = 'electron-app/out/renderer/assets';
+            const bundle = fs.existsSync(assetsDir)
+              ? fs.readdirSync(assetsDir).find((file) => file.endsWith('.js'))
+              : null;
 
-            if (fs.existsSync(path)) {
-              const stats = fs.statSync(path);
+            if (bundle) {
+              const stats = fs.statSync(path.join(assetsDir, bundle));
               const sizeKB = (stats.size / 1024).toFixed(2);
 
               github.rest.issues.createComment({
