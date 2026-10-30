@@ -44,9 +44,19 @@ jobs:
 
       # Build Electron app (but don't package yet)
       - name: Build Electron app
-        run: cd electron-app && pnpm build
+        run: |
+          cd electron-app
+          pnpm build
+          pnpm exec electron-builder --dir
         env:
           # Skip Electron binary download during build
+          ELECTRON_SKIP_BINARY_DOWNLOAD: true
+
+      - name: Verify Electron package config
+        run: |
+          cd electron-app
+          pnpm exec electron-builder --validate-config
+        env:
           ELECTRON_SKIP_BINARY_DOWNLOAD: true
 
       # Smoke test the built CLI without touching any real browser data.

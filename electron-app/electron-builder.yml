@@ -1,5 +1,5 @@
 app-id: com.crosssync.desktop
-product-name: CrossSync Desktop
+productName: CrossSync Desktop
 copyright: Copyright © 2024 CrossSync Team
 
 directories:
@@ -33,7 +33,7 @@ linux:
   category: Utility
 
 nsis:
-  one-click: false
+  oneClick: false
   allowToChangeInstallationDirectory: true
 
 compression: maximum
