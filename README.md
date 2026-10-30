@@ -283,3 +283,44 @@ node packages/cli/dist/index.js --home-dir /tmp/crosssync-demo status
 ## License
 
 MIT
+
+---
+
+## 🖥️ 桌面应用（实验性）
+
+除了 CLI，CrossSync 还提供了一个 **Electron 桌面应用**，带有图形界面：
+
+### 特性
+
+- 📊 **可视化仪表板** — 浏览器状态、统计信息一目了然
+- 🔄 **一键同步** — 点击按钮即可同步书签和历史
+- 💾 **备份管理** — 创建、查看、清理备份
+- 📋 **日志查看** — 实时查看同步日志
+- ⚙️ **设置页面** — 图形化配置管理
+- 🔔 **系统托盘** — 后台运行，快速访问
+
+### 快速启动
+
+```bash
+cd electron-app
+pnpm install
+pnpm dev
+```
+
+详见：
+- 📖 [桌面应用 README](./electron-app/README.md)
+- 🚀 [快速开始指南](./electron-app/QUICKSTART.md)
+- 📊 [项目总结](./electron-app/PROJECT_SUMMARY.md)
+
+### 技术栈
+
+- **Electron** 30+ — 跨平台桌面框架
+- **Vue 3** — 前端框架
+- **TypeScript** — 类型安全
+- **Tailwind CSS** — 样式系统
+- **electron-vite** — 极速开发体验
+
+### 状态
+
+✅ **MVP 完成** — 核心功能可用，可进入测试阶段
+⏳ **待完善** — 定时同步 UI、托盘增强、CI/CD 自动化
