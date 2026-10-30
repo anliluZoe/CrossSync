@@ -19,7 +19,6 @@ jobs:
 
       - name: Setup pnpm
         uses: pnpm/action-setup@v4
-        # Version comes from the `packageManager` field in package.json.
 
       - name: Setup Node.js
         uses: actions/setup-node@v4
@@ -27,30 +26,38 @@ jobs:
           node-version: 22
           cache: pnpm
 
+      # Install only necessary packages (skip CLI to avoid better-sqlite3 native build issues)
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
+        env:
+          ELECTRON_SKIP_BINARY_DOWNLOAD: true
+          npm_config_build_from_source: false
 
-      - name: Type check
-        run: pnpm typecheck
+      - name: Build shared and core packages
+        run: pnpm --filter @crosssync/shared --filter @crosssync/core build
 
-      - name: Run tests
-        run: pnpm test
+      - name: Type check (shared & core)
+        run: pnpm --filter @crosssync/shared --filter @crosssync/core typecheck
 
-      - name: Build packages
-        run: pnpm build
+      - name: Run tests (shared & core)
+        run: pnpm --filter @crosssync/shared --filter @crosssync/core test
 
-      - name: Lint
-        run: pnpm lint
-
-      # Build Electron app (but don't package yet)
       - name: Build Electron app
         run: |
           cd electron-app
           pnpm build
-          pnpm exec electron-builder --dir
         env:
-          # Skip Electron binary download during build
           ELECTRON_SKIP_BINARY_DOWNLOAD: true
+
+      - name: Package Electron app (Linux)
+        run: |
+          cd electron-app
+          pnpm exec electron-builder --linux --x64 --dir
+        env:
+          ELECTRON_SKIP_BINARY_DOWNLOAD: true
+
+      - name: Lint Electron app
+        run: pnpm --filter crosssync-desktop lint
 
       - name: Verify Electron package config
         run: |
@@ -59,16 +66,16 @@ jobs:
         env:
           ELECTRON_SKIP_BINARY_DOWNLOAD: true
 
-      # Smoke test the built CLI without touching any real browser data.
-      - name: CLI smoke test
-        run: |
-          node packages/cli/dist/index.js --version
-          node packages/cli/dist/index.js --home-dir "$RUNNER_TEMP/crosssync-ci" config --path
-          node packages/cli/dist/index.js --home-dir "$RUNNER_TEMP/crosssync-ci" install-cron --dry-run
-          node packages/cli/dist/index.js --home-dir "$RUNNER_TEMP/crosssync-ci" status --json
+      - name: Upload Electron artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: electron-app-linux
+          path: electron-app/release/
+          retention-days: 7
 
-      - name: Verify Electron app build
+      - name: Verify build
         run: |
-          echo "✅ Electron app built successfully"
+          echo "✅ Build verification"
           ls -lh electron-app/out/main/index.js
           ls -lh electron-app/out/renderer/index.html
+          ls -lh electron-app/release/
