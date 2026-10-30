@@ -1,4 +1,4 @@
-import { app, BrowserWindow, Tray, Menu, nativeImage, ipcMain } from 'electron';
+import { app, BrowserWindow } from 'electron';
 import path from 'path';
 import { fileURLToPath } from 'url';
 
@@ -10,7 +10,6 @@ import { createTray } from './tray';
 const __dirname = fileURLToPath(new URL('.', import.meta.url));
 
 let mainWindow: BrowserWindow | null = null;
-let tray: Tray | null = null;
 
 function createWindow() {
   mainWindow = new BrowserWindow({
@@ -56,7 +55,7 @@ function createWindow() {
 
 app.whenReady().then(() => {
   createWindow();
-  tray = createTray(mainWindow);
+  createTray(mainWindow);  // 创建托盘，不保存引用
 
   app.on('activate', () => {
     if (BrowserWindow.getAllWindows().length === 0) {

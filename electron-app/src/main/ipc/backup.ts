@@ -1,10 +1,14 @@
 import { ipcMain } from 'electron';
-import { createBackup, listBackups, pruneBackups, type BackupOptions } from '@crosssync/core/backup';
+import {
+  createBackup,
+  listBackups,
+  pruneBackups,
+  type BackupOptions,
+} from '@crosssync/core/backup';
 import { createConfiguredBrowserReaders } from '@crosssync/core/readers';
 import { createDefaultConfig, resolveCrossSyncDirs, pathExists } from '@crosssync/shared';
 import { homedir } from 'os';
 import { join } from 'path';
-import fs from 'fs/promises';
 
 export function registerBackupHandlers() {
   // 执行备份

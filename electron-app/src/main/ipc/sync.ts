@@ -2,10 +2,14 @@ import { ipcMain } from 'electron';
 import { runSync, type SyncRunOptions } from '@crosssync/core/sync';
 import { createConfiguredBrowserReaders, supportedBrowsers } from '@crosssync/core/readers';
 import { getRunningBrowsers } from '@crosssync/core/browser-status';
-import { createDefaultConfig, resolveCrossSyncDirs, readJsonFile, isCliConfig } from '@crosssync/shared';
+import {
+  createDefaultConfig,
+  resolveCrossSyncDirs,
+  readJsonFile,
+  isCliConfig,
+} from '@crosssync/shared';
 import { homedir } from 'os';
 import { join } from 'path';
-import fs from 'fs/promises';
 
 export function registerSyncHandlers() {
   // 执行同步

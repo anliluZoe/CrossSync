@@ -24,12 +24,18 @@ export interface ElectronAPI {
       }>;
       error?: string;
     }>;
-    readBookmarks: (browser: string, profile: string) => Promise<{
+    readBookmarks: (
+      browser: string,
+      profile: string,
+    ) => Promise<{
       success: boolean;
       data?: unknown;
       error?: string;
     }>;
-    readHistory: (browser: string, profile: string) => Promise<{
+    readHistory: (
+      browser: string,
+      profile: string,
+    ) => Promise<{
       success: boolean;
       data?: unknown;
       error?: string;
@@ -58,7 +64,10 @@ export interface ElectronAPI {
       data?: Record<string, unknown>;
       error?: string;
     }>;
-    setConfig: (key: string, value: unknown) => Promise<{
+    setConfig: (
+      key: string,
+      value: unknown,
+    ) => Promise<{
       success: boolean;
       error?: string;
     }>;

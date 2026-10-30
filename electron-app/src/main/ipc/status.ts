@@ -1,8 +1,13 @@
-import { ipcMain, BrowserWindow } from 'electron';
+import { ipcMain } from 'electron';
 import { createConfiguredBrowserReaders } from '@crosssync/core/readers';
 import { getRunningBrowsers } from '@crosssync/core/browser-status';
 import { readLogEntries, clearLogFile } from '@crosssync/core/logger';
-import { createDefaultConfig, resolveCrossSyncDirs, readJsonFile, isCliConfig } from '@crosssync/shared';
+import {
+  createDefaultConfig,
+  resolveCrossSyncDirs,
+  readJsonFile,
+  isCliConfig,
+} from '@crosssync/shared';
 import { homedir } from 'os';
 import { join } from 'path';
 import fs from 'fs/promises';
