@@ -271,11 +271,12 @@ node packages/cli/dist/index.js --home-dir /tmp/crosssync-demo status
 
 1. 在 npm 账号中创建带发布权限的 token（CI 建议使用 Automation token，可绕过 2FA）；
 2. 在 GitHub 仓库 `Settings → Secrets and variables → Actions` 添加 `NPM_TOKEN`；
-3. 同时修改两处版本号：`packages/cli/package.json` 和
-   `packages/cli/src/constants.ts` 里的 `CLI_VERSION`；
-4. 提交并推送后，进入 `Actions → Publish to npm → Run workflow`：
+3. 进入 `Actions → Publish to npm → Run workflow`：
+   - `bump` 选择 `auto` / `patch` / `minor` / `major`，工作流会自动从 npm 读取最新版本并算出下一个版本号；
+   - `auto` 在本地位于 npm 已发布版本之后时直接发布本地版本，所以手动改的版本号也会被尊重；
    - 勾选 `dry_run` 只验证打包，不会上传；
-   - 工作流会依次执行 `lint → typecheck → test → build`，并检查该版本是否已存在。
+   - 版本号会同步写入 `packages/cli/package.json` 和 `packages/cli/src/constants.ts` 的 `CLI_VERSION`，
+     然后依次执行 `lint → typecheck → test → build`，发布成功后提交并推送回分支。
 
 首次发布成功后，可以在 npm 包设置中配置 Trusted Publishing（GitHub Actions），
 之后即可删除 `NPM_TOKEN`。
@@ -301,95 +302,18 @@ CrossSync 使用 GitHub Actions 进行自动化构建和发布。
 - ✅ 单元测试
 - ✅ 构建所有包
 - ✅ ESLint 代码检查
-- ✅ **构建 Electron 应用** ⭐
 - ✅ CLI 冒烟测试
 
 查看: [`.github/workflows/ci.yml`](.github/workflows/ci.yml)
 
-#### 2. Build Electron App — PR 打包
-
-**触发**: Push / Pull Request
-
-**执行**:
-- ✅ 构建 Electron 应用
-- ✅ 打包 Linux 版本
-- ✅ 上传 Artifacts (7天有效)
-- ✅ PR 自动评论构建信息
-
-查看: [`.github/workflows/build-electron.yml`](.github/workflows/build-electron.yml)
-
-#### 3. Release Electron App — 自动发布
-
-**触发**: 创建版本标签或手动触发
-
-**执行**:
-- ✅ 构建 macOS, Windows, Linux
-- ✅ 生成安装包 (dmg, exe, AppImage, deb)
-- ✅ 自动发布到 GitHub Releases
-- ✅ 生成 Release Notes
-
-**使用方法**:
-
-```bash
-# 1. 更新版本号
-# 编辑 electron-app/package.json
-
-# 2. 创建标签
-git tag v1.0.0
-git push origin v1.0.0
-
-# 3. GitHub Actions 自动发布 ✨
-```
-
-查看: [`.github/workflows/release-electron.yml`](.github/workflows/release-electron.yml)
-
-#### 4. Publish to npm — CLI 发布
+#### 2. Publish to npm — CLI 发布
 
 **触发**: 手动触发 (workflow_dispatch)
 
 **执行**:
+- ✅ 自动计算下一个版本号
 - ✅ 验证版本
 - ✅ 发布到 npm registry
+- ✅ 版本号提交回分支
 
 查看: [`.github/workflows/publish.yml`](.github/workflows/publish.yml)
-
----
-
-## 🖥️ 桌面应用（实验性）
-
-除了 CLI，CrossSync 还提供了一个 **Electron 桌面应用**，带有图形界面：
-
-### 特性
-
-- 📊 **可视化仪表板** — 浏览器状态、统计信息一目了然
-- 🔄 **一键同步** — 点击按钮即可同步书签和历史
-- 💾 **备份管理** — 创建、查看、清理备份
-- 📋 **日志查看** — 实时查看同步日志
-- ⚙️ **设置页面** — 图形化配置管理
-- 🔔 **系统托盘** — 后台运行，快速访问
-
-### 快速启动
-
-```bash
-cd electron-app
-pnpm install
-pnpm dev
-```
-
-详见：
-- 📖 [桌面应用 README](./electron-app/README.md)
-- 🚀 [快速开始指南](./electron-app/QUICKSTART.md)
-- 📊 [项目总结](./electron-app/PROJECT_SUMMARY.md)
-
-### 技术栈
-
-- **Electron** 30+ — 跨平台桌面框架
-- **Vue 3** — 前端框架
-- **TypeScript** — 类型安全
-- **Tailwind CSS** — 样式系统
-- **electron-vite** — 极速开发体验
-
-### 状态
-
-✅ **MVP 完成** — 核心功能可用，可进入测试阶段
-⏳ **待完善** — 定时同步 UI、托盘增强、CI/CD 自动化

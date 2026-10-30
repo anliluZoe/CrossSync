@@ -78,6 +78,7 @@ Tests must never touch a real browser profile. They use `os.tmpdir()` fixtures, 
 ## Intentional non-goals
 
 - Browser extensions (Chrome/Edge) — removed on purpose
+- Electron desktop app — removed on purpose; CrossSync is CLI-only
 - WebSocket server, client connection management, heartbeats, auth tokens — removed on purpose
 - Writing back to `History.sqlite` during sync — Chromium owns that file while running
   (the explicit `crosssync restore --history` recovery command is the only exception)
@@ -97,6 +98,6 @@ Tests must never touch a real browser profile. They use `os.tmpdir()` fixtures, 
 
 `.github/workflows/publish.yml` is manual-only (`workflow_dispatch`). It reads the latest version
 from the npm registry and picks the next one automatically (`auto` / `patch` / `minor` / `major`),
-writes it into `packages/cli/package.json`, publishes, then commits the bump back to the branch.
-`auto` publishes the local version unchanged when it is already ahead of npm, so manual bumps still
-work. It never pushes a git tag: `v*` tags trigger `release-electron.yml`.
+writes it into `packages/cli/package.json` and `CLI_VERSION` in `packages/cli/src/constants.ts`,
+publishes, then commits the bump back to the branch. `auto` publishes the local version unchanged
+when it is already ahead of npm, so manual bumps still work.

@@ -37,7 +37,6 @@ jobs:
           packages:
             - 'packages/shared'
             - 'packages/core'
-            - 'electron-app'
           EOF
 
           cat pnpm-workspace.yaml
@@ -45,7 +44,6 @@ jobs:
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
         env:
-          ELECTRON_SKIP_BINARY_DOWNLOAD: true
           npm_config_build_from_source: false
 
       - name: Build shared and core packages
@@ -62,18 +60,6 @@ jobs:
         run: |
           pnpm --filter @crosssync/shared test
           pnpm --filter @crosssync/core test
-
-      # Build Electron app
-      - name: Build Electron app
-        run: |
-          cd electron-app
-          pnpm build
-        env:
-          ELECTRON_SKIP_BINARY_DOWNLOAD: true
-
-      # Lint Electron app
-      - name: Lint Electron app
-        run: pnpm --filter crosssync-desktop lint
 
       # Restore original workspace config
       - name: Restore workspace config

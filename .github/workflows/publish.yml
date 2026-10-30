@@ -59,6 +59,9 @@ jobs:
 
           NEXT=$(node .github/scripts/next-version.mjs ./packages/cli/package.json "$PUBLISHED" "$BUMP" --write)
 
+          # Keep the CLI_VERSION constant bundled into the CLI in sync.
+          sed -i -E "s/(export const CLI_VERSION = ')[^']*(')/\1$NEXT\2/" packages/cli/src/constants.ts
+
           echo "name=$NAME" >> "$GITHUB_OUTPUT"
           echo "previous=$LOCAL" >> "$GITHUB_OUTPUT"
           echo "version=$NEXT" >> "$GITHUB_OUTPUT"
@@ -101,14 +104,15 @@ jobs:
       - name: Commit version bump
         if: ${{ !inputs.dry_run && inputs.commit_version && github.ref_type == 'branch' }}
         run: |
-          if git diff --quiet -- packages/cli/package.json; then
+          git add packages/cli/package.json packages/cli/src/constants.ts
+
+          if git diff --cached --quiet; then
             echo "Version unchanged, nothing to commit."
             exit 0
           fi
 
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add packages/cli/package.json
           git commit -m "chore(release): ${{ steps.version.outputs.name }}@${{ steps.version.outputs.version }}"
 
           if ! git push origin "HEAD:$GITHUB_REF_NAME"; then
