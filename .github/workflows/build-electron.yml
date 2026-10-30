@@ -1,10 +1,11 @@
-name: Build Electron App (PR & Push)
+name: Build Electron App
 
 on:
   push:
     branches: [main, master]
   pull_request:
     branches: [main, master]
+  workflow_dispatch:
 
 jobs:
   build-electron:
@@ -24,11 +25,11 @@ jobs:
 
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
+        env:
+          ELECTRON_SKIP_BINARY_DOWNLOAD: true
+          npm_config_build_from_source: false
 
-      - name: Build all packages
-        run: pnpm build
-
-      - name: Build Electron app (production)
+      - name: Build Electron app
         run: |
           cd electron-app
           pnpm build
@@ -41,7 +42,6 @@ jobs:
           pnpm exec electron-builder --linux --x64 --dir
         env:
           ELECTRON_SKIP_BINARY_DOWNLOAD: true
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Upload Electron artifacts
         uses: actions/upload-artifact@v4

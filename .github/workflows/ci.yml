@@ -26,22 +26,30 @@ jobs:
           node-version: 22
           cache: pnpm
 
-      # Install only necessary packages (skip CLI to avoid better-sqlite3 native build issues)
+      # Install only necessary packages (exclude CLI to skip better-sqlite3)
       - name: Install dependencies
-        run: pnpm install --frozen-lockfile
+        run: |
+          pnpm install --frozen-lockfile --ignore-scripts
         env:
           ELECTRON_SKIP_BINARY_DOWNLOAD: true
-          npm_config_build_from_source: false
 
+      # Build shared and core packages
       - name: Build shared and core packages
-        run: pnpm --filter @crosssync/shared --filter @crosssync/core build
+        run: |
+          pnpm --filter @crosssync/shared build
+          pnpm --filter @crosssync/core build
 
       - name: Type check (shared & core)
-        run: pnpm --filter @crosssync/shared --filter @crosssync/core typecheck
+        run: |
+          pnpm --filter @crosssync/shared typecheck
+          pnpm --filter @crosssync/core typecheck
 
       - name: Run tests (shared & core)
-        run: pnpm --filter @crosssync/shared --filter @crosssync/core test
+        run: |
+          pnpm --filter @crosssync/shared test
+          pnpm --filter @crosssync/core test
 
+      # Build Electron app
       - name: Build Electron app
         run: |
           cd electron-app
@@ -49,33 +57,15 @@ jobs:
         env:
           ELECTRON_SKIP_BINARY_DOWNLOAD: true
 
-      - name: Package Electron app (Linux)
-        run: |
-          cd electron-app
-          pnpm exec electron-builder --linux --x64 --dir
-        env:
-          ELECTRON_SKIP_BINARY_DOWNLOAD: true
-
+      # Lint Electron app
       - name: Lint Electron app
         run: pnpm --filter crosssync-desktop lint
 
-      - name: Verify Electron package config
-        run: |
-          cd electron-app
-          pnpm exec electron-builder --validate-config
-        env:
-          ELECTRON_SKIP_BINARY_DOWNLOAD: true
-
-      - name: Upload Electron artifacts
-        uses: actions/upload-artifact@v4
-        with:
-          name: electron-app-linux
-          path: electron-app/release/
-          retention-days: 7
-
+      # Verify build output exists
       - name: Verify build
         run: |
           echo "✅ Build verification"
           ls -lh electron-app/out/main/index.js
           ls -lh electron-app/out/renderer/index.html
-          ls -lh electron-app/release/
+          test -f electron-app/out/main/index.js || (echo "❌ Main process build failed" && exit 1)
+          test -f electron-app/out/renderer/index.html || (echo "❌ Renderer build failed" && exit 1)
