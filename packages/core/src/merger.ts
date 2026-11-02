@@ -235,16 +235,30 @@ function mergeChildren(
   const takeMatch = (
     incoming: TrackedNode,
     same: (base: TrackedNode, candidate: TrackedNode) => boolean,
+    score?: (base: TrackedNode, candidate: TrackedNode) => number,
   ): boolean => {
+    let bestIndex = -1;
+    let bestScore = Number.NEGATIVE_INFINITY;
     for (let index = 0; index < merged.length; index += 1) {
       if (matched[index] || !same(merged[index], incoming)) {
         continue;
       }
-      matched[index] = true;
-      merged[index] = mergeTrackedNode(merged[index], incoming, stats, conflicts);
-      return true;
+      if (!score) {
+        bestIndex = index;
+        break;
+      }
+      const value = score(merged[index], incoming);
+      if (value > bestScore) {
+        bestScore = value;
+        bestIndex = index;
+      }
     }
-    return false;
+    if (bestIndex < 0) {
+      return false;
+    }
+    matched[bestIndex] = true;
+    merged[bestIndex] = mergeTrackedNode(merged[bestIndex], incoming, stats, conflicts);
+    return true;
   };
 
   // Compare by guid first across all pending nodes, then by content, and only
@@ -256,9 +270,13 @@ function mergeChildren(
     }
   }
 
+  // Sibling folders may share a name (users create several "Inbox" folders, and
+  // a lost guid makes them indistinguishable by identity). Match the folder with
+  // the most overlapping descendants instead of the first one, otherwise two
+  // different folders cross-merge and every bookmark gets duplicated on each run.
   const byUrl: TrackedNode[] = [];
   for (const incoming of byContent) {
-    if (!takeMatch(incoming, sameContent)) {
+    if (!takeMatch(incoming, sameContent, folderOverlap)) {
       byUrl.push(incoming);
     }
   }
@@ -309,6 +327,49 @@ function sameUrl(base: TrackedNode, incoming: TrackedNode): boolean {
 
 function normalizedUrl(node: BookmarkNode): string {
   return (node.url ?? '').trim();
+}
+
+/** Stable identities of every descendant, used to score sibling folder matches. */
+function descendantIdentityKeys(folder: TrackedNode): Set<string> {
+  const keys = new Set<string>();
+  const visit = (node: TrackedNode): void => {
+    for (const child of node.children) {
+      const guid = child.node.guid;
+      if (typeof guid === 'string' && guid.length > 0) {
+        keys.add(`g:${guid}`);
+      } else if (child.node.type === 'url') {
+        keys.add(`u:${normalizedUrl(child.node)}`);
+      } else {
+        keys.add(`f:${child.node.name}`);
+      }
+      visit(child);
+    }
+  };
+  visit(folder);
+  return keys;
+}
+
+/**
+ * Number of descendants two folders have in common. Sibling folders can share a
+ * name, so picking the candidate with the highest overlap keeps distinct folders
+ * separate instead of cross-merging their contents (which duplicates every
+ * bookmark on each sync).
+ */
+function folderOverlap(base: TrackedNode, incoming: TrackedNode): number {
+  if (base.node.type !== 'folder' || incoming.node.type !== 'folder') {
+    return 0;
+  }
+  const baseKeys = descendantIdentityKeys(base);
+  if (baseKeys.size === 0) {
+    return 0;
+  }
+  let overlap = 0;
+  for (const key of descendantIdentityKeys(incoming)) {
+    if (baseKeys.has(key)) {
+      overlap += 1;
+    }
+  }
+  return overlap;
 }
 
 /** Highest numeric id across every input, used as the renumbering starting point. */
