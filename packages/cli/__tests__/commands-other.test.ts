@@ -5,6 +5,7 @@ import path from 'path';
 import { LOG_FILE_NAME } from '@crosssync/shared';
 
 import { createContext, createMemoryIo, loadConfigFile, type CliContext } from '../src/context';
+import { CLI_VERSION } from '../src/constants';
 import { runBackupCommand, collectBackupSources, formatBytes } from '../src/commands/backup';
 import {
   coerceConfigValue,
@@ -150,7 +151,7 @@ describe('status command', () => {
 
     expect(code).toBe(0);
     const output = io.stdout.join('\n');
-    expect(output).toContain('CrossSync 0.1.4');
+    expect(output).toContain(`CrossSync ${CLI_VERSION}`);
     expect(output).toContain(`config:    ${fixture.configFile}`);
     expect(output).toContain('schedule:  not installed');
     expect(output).toContain('Default: Bookmarks');
@@ -167,7 +168,7 @@ describe('status command', () => {
       version: string;
       browsers: { browser: string }[];
     };
-    expect(report.version).toBe('0.1.4');
+    expect(report.version).toBe(CLI_VERSION);
     expect(report.browsers.map((entry) => entry.browser)).toEqual(['chrome', 'edge']);
   });
 });
