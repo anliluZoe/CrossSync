@@ -240,6 +240,97 @@ describe('mergeBookmarkFiles', () => {
     expect(new Set(ids).size).toBe(ids.length);
   });
 
+  it('does not cross-merge sibling folders that share a name', () => {
+    // Chrome and Edge both have two folders called "e6", but their contents
+    // are different and listed in opposite order. Matching by position would
+    // merge a/b into c/d (and vice versa), duplicating every bookmark.
+    const chrome = bookmarkFile(
+      folder('1', 'Bookmarks bar', [
+        folder('10', 'e6', [
+          url('11', 'a', 'https://a.example.com'),
+          url('12', 'b', 'https://b.example.com'),
+        ]),
+        folder('20', 'e6', [
+          url('21', 'c', 'https://c.example.com'),
+          url('22', 'd', 'https://d.example.com'),
+        ]),
+      ]),
+    );
+    const edge = bookmarkFile(
+      folder('1', 'Bookmarks bar', [
+        folder('30', 'e6', [
+          url('31', 'c', 'https://c.example.com'),
+          url('32', 'd', 'https://d.example.com'),
+        ]),
+        folder('40', 'e6', [
+          url('41', 'a', 'https://a.example.com'),
+          url('42', 'b', 'https://b.example.com'),
+        ]),
+      ]),
+    );
+
+    const result = mergeBookmarkFiles([
+      { browser: 'chrome', file: chrome },
+      { browser: 'edge', file: edge },
+    ]);
+
+    const urlsIn = (node: BookmarkNode): string[] =>
+      flattenBookmarks(node)
+        .filter((entry) => entry.node.type === 'url')
+        .map((entry) => entry.node.url ?? '');
+    const folders = result.roots.bookmark_bar.children ?? [];
+    expect(folders).toHaveLength(2);
+    expect(urlsIn(folders[0]).sort()).toEqual([
+      'https://a.example.com',
+      'https://b.example.com',
+    ]);
+    expect(urlsIn(folders[1]).sort()).toEqual([
+      'https://c.example.com',
+      'https://d.example.com',
+    ]);
+  });
+
+  it('stays stable when sibling folder order changes between syncs', () => {
+    const foldersFor = (ids: [string, string][]) =>
+      ids.map(([id, urls]) =>
+        folder(id, 'e6', urls.split(',').map((href) => url(`u-${href}`, href, `https://${href}`))),
+      );
+    const first = mergeBookmarkFiles([
+      {
+        browser: 'chrome',
+        file: bookmarkFile(
+          folder('1', 'Bookmarks bar', foldersFor([
+            ['10', 'a,b'],
+            ['20', 'c,d'],
+          ])),
+        ),
+      },
+      {
+        browser: 'edge',
+        file: bookmarkFile(
+          folder('1', 'Bookmarks bar', foldersFor([
+            ['30', 'c,d'],
+            ['40', 'a,b'],
+          ])),
+        ),
+      },
+    ]);
+
+    // A browser may reorder the folders after write-back; a second merge must
+    // not add anything.
+    const reordered = [...(first.roots.bookmark_bar.children ?? [])].reverse();
+    const second = mergeBookmarkFiles([
+      { browser: 'chrome', file: bookmarkFile(folder('1', 'Bookmarks bar', reordered)) },
+      { browser: 'edge', file: bookmarkFile(folder('1', 'Bookmarks bar', first.roots.bookmark_bar.children ?? [])) },
+    ]);
+
+    const totalUrls = flattenBookmarks(second.roots.bookmark_bar).filter(
+      (entry) => entry.node.type === 'url',
+    );
+    expect(totalUrls).toHaveLength(4);
+    expect(second.stats.added).toBe(0);
+  });
+
   it('throws without any input', () => {
     expect(() => mergeBookmarkFiles([])).toThrow(/at least one input/);
   });
