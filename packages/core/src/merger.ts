@@ -1,3 +1,5 @@
+import { randomUUID } from 'crypto';
+
 import type {
   BookmarkFile,
   BookmarkNode,
@@ -74,9 +76,9 @@ interface TrackedNode {
  * 3. the URL of url nodes
  *
  * When both browsers know the same node, the version with the newer
- * `date_added` wins. Local ids that still collide after merging are renumbered,
- * and duplicate guids are dropped, so the merged tree is safe to write back to
- * every browser.
+ * `date_added` wins. Local ids that still collide after merging are renumbered
+ * and repeated bookmarks are collapsed, so the merged tree is safe to write back
+ * to every browser and a second sync does not add another copy.
  */
 export function mergeBookmarkFiles(inputs: BookmarkMergeInput[]): BookmarkMergeResult {
   if (inputs.length === 0) {
@@ -118,6 +120,7 @@ export function mergeBookmarkFiles(inputs: BookmarkMergeInput[]): BookmarkMergeR
 
   // The same merged tree is written back to every browser, so ids must be
   // unique within it even when the source profiles used overlapping id ranges.
+  collapseDuplicateSiblings(mergedRoots);
   renumberDuplicateIds(mergedRoots, highestNumericId(inputs));
   dedupeGuids(mergedRoots);
 
@@ -423,23 +426,101 @@ function renumberDuplicateIds(roots: BookmarkRoots, highest: number): void {
 }
 
 /**
- * Drops duplicate guids: Chromium regenerates a missing guid, while keeping a
- * duplicate could make the browser discard the bookmark.
+ * Collapses bookmarks that ended up several times in the same folder.
+ *
+ * Repeated syncs used to leave a copy of one bookmark next to an identical one.
+ * Two url nodes with the same URL, name and `date_added` are indistinguishable,
+ * so keeping only the first one is safe and stops the duplicates from being
+ * carried over on every run. Folders are skipped: several folders may
+ * legitimately share a name.
+ */
+function collapseDuplicateSiblings(roots: BookmarkRoots): void {
+  const visit = (node: BookmarkNode): void => {
+    if (!node.children) {
+      return;
+    }
+    const seen = new Map<string, BookmarkNode>();
+    const kept: BookmarkNode[] = [];
+    for (const child of node.children) {
+      const key = duplicateSiblingKey(child);
+      if (key !== null) {
+        const existing = seen.get(key);
+        if (existing) {
+          // Keep the identity one of the copies already carries.
+          if (!existing.guid && child.guid) {
+            existing.guid = child.guid;
+          }
+          continue;
+        }
+        seen.set(key, child);
+      }
+      kept.push(child);
+      visit(child);
+    }
+    node.children = kept;
+  };
+
+  for (const key of BOOKMARK_ROOT_KEYS) {
+    const root = roots[key];
+    if (root) {
+      visit(root);
+    }
+  }
+}
+
+function duplicateSiblingKey(node: BookmarkNode): string | null {
+  if (node.type !== 'url') {
+    return null;
+  }
+  return [node.url ?? '', node.name, node.date_added ?? ''].join('\u0000');
+}
+
+/**
+ * Drops a bookmark whose guid is already used elsewhere in the merged tree.
+ *
+ * A duplicate guid means the same bookmark was copied twice: an earlier sync
+ * copied a whole folder whose child already existed somewhere else. Chromium
+ * keeps one node per guid, so the later occurrence is dropped. This matters for
+ * more than tidiness: a node whose guid was simply deleted gets a brand-new guid
+ * from the browser on the next load, so the following merge treats it as a new
+ * bookmark and appends yet another copy on every sync.
+ *
+ * Folders are never dropped, because their children would be lost with them; a
+ * duplicate folder guid only re-identifies the copy. Every node leaves this
+ * function with a unique guid, including nodes that had none, so both browsers
+ * write back the same identity instead of inventing their own.
  */
 function dedupeGuids(roots: BookmarkRoots): void {
   const seen = new Set<string>();
 
-  const visit = (node: BookmarkNode): void => {
-    if (node.guid) {
-      if (seen.has(node.guid)) {
-        delete node.guid;
-      } else {
-        seen.add(node.guid);
-      }
+  for (const key of BOOKMARK_ROOT_KEYS) {
+    const root = roots[key];
+    if (root?.guid) {
+      seen.add(root.guid);
     }
-    for (const child of node.children ?? []) {
+  }
+
+  const visit = (node: BookmarkNode): void => {
+    if (!node.children) {
+      return;
+    }
+    const kept: BookmarkNode[] = [];
+    for (const child of node.children) {
+      let guid = child.guid;
+      if (!guid) {
+        guid = randomUUID();
+      } else if (seen.has(guid)) {
+        if (child.type === 'url') {
+          continue;
+        }
+        guid = randomUUID();
+      }
+      child.guid = guid;
+      seen.add(guid);
+      kept.push(child);
       visit(child);
     }
+    node.children = kept;
   };
 
   for (const key of BOOKMARK_ROOT_KEYS) {

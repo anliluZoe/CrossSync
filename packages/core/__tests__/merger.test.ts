@@ -334,6 +334,63 @@ describe('mergeBookmarkFiles', () => {
   it('throws without any input', () => {
     expect(() => mergeBookmarkFiles([])).toThrow(/at least one input/);
   });
+
+  it('keeps one copy when a bookmark is both on the bar and inside a folder', () => {
+    // The user bookmarked a page directly on the bar in Chrome while the same
+    // page (same guid) already sat in a folder in Edge. Copying the folder used
+    // to duplicate the node and leave a guid-less copy behind, which every later
+    // sync treated as a brand-new bookmark.
+    const onBar = url('2', 'Page', 'https://page.example.com', '1000');
+    onBar.guid = 'guid-page';
+    const inFolder = url('7', 'Page', 'https://page.example.com', '1000');
+    inFolder.guid = 'guid-page';
+
+    const merged = mergeBookmarkFiles([
+      { browser: 'chrome', file: bookmarkFile(folder('1', 'Bookmarks bar', [onBar])) },
+      {
+        browser: 'edge',
+        file: bookmarkFile(
+          folder('1', 'Bookmarks bar', [folder('5', 'Reading', [inFolder], '900')]),
+        ),
+      },
+    ]);
+
+    const bookmarks = flattenBookmarks(merged.roots.bookmark_bar).filter(
+      (entry) => entry.node.type === 'url',
+    );
+    expect(bookmarks).toHaveLength(1);
+    expect(bookmarks[0].node.id).toBe('2');
+    expect(bookmarks[0].node.guid).toBe('guid-page');
+
+    // Writing the tree back to both browsers and syncing again must not add
+    // another copy.
+    const second = mergeBookmarkFiles([
+      { browser: 'chrome', file: { roots: merged.roots, version: 1 } },
+      { browser: 'edge', file: { roots: merged.roots, version: 1 } },
+    ]);
+    expect(
+      flattenBookmarks(second.roots.bookmark_bar).filter((entry) => entry.node.type === 'url'),
+    ).toHaveLength(1);
+    expect(second.stats.added).toBe(0);
+  });
+
+  it('collapses identical bookmarks sitting in the same folder', () => {
+    const file = bookmarkFile(
+      folder('1', 'Bookmarks bar', [
+        url('2', 'Page', 'https://page.example.com', '1000'),
+        url('3', 'Page', 'https://page.example.com', '1000'),
+        url('4', 'Page', 'https://page.example.com', '2000'),
+      ]),
+    );
+
+    const result = mergeBookmarkFiles([{ browser: 'chrome', file }]);
+    const bookmarks = flattenBookmarks(result.roots.bookmark_bar).filter(
+      (entry) => entry.node.type === 'url',
+    );
+    // The two indistinguishable copies collapse; the one with a different
+    // date_added may be an intentional second bookmark and is kept.
+    expect(bookmarks.map((entry) => entry.node.id)).toEqual(['2', '4']);
+  });
 });
 
 describe('mergeHistory', () => {
