@@ -15,6 +15,15 @@ export interface BookmarkMergeInput {
   file: BookmarkFile;
 }
 
+export interface BookmarkMergeOptions {
+  /**
+   * Folder names from the previous successful merge, keyed by guid. When a
+   * folder title differs between two browsers, comparing both names with this
+   * snapshot shows which side was renamed after the last sync.
+   */
+  previousFolders?: ReadonlyMap<string, string>;
+}
+
 export interface BookmarkMergeStats {
   /** Total nodes in the merged tree, including root folders. */
   total: number;
@@ -34,6 +43,9 @@ export interface BookmarkMergeConflict {
   loserOrigin: BrowserName;
   winnerDateAdded: number;
   loserDateAdded: number;
+  /** Folder last-modified timestamp; only present on folder conflicts. */
+  winnerDateModified?: number;
+  loserDateModified?: number;
 }
 
 export interface BookmarkMergeResult {
@@ -75,18 +87,24 @@ interface TrackedNode {
  * 2. type + name (url nodes additionally compare their URL)
  * 3. the URL of url nodes
  *
- * When both browsers know the same node, the version with the newer
- * `date_added` wins. Local ids that still collide after merging are renumbered
- * and repeated bookmarks are collapsed, so the merged tree is safe to write back
- * to every browser and a second sync does not add another copy.
+ * When both browsers know the same node, a new version wins for url nodes. For
+ * folders the newer title wins: the previous merge snapshot shows which side was
+ * renamed, and `date_modified` breaks the tie when both (or neither) changed.
+ * Local ids that still collide after merging are renumbered and repeated
+ * bookmarks are collapsed, so the merged tree is safe to write back to every
+ * browser and a second sync does not add another copy.
  */
-export function mergeBookmarkFiles(inputs: BookmarkMergeInput[]): BookmarkMergeResult {
+export function mergeBookmarkFiles(
+  inputs: BookmarkMergeInput[],
+  options: BookmarkMergeOptions = {},
+): BookmarkMergeResult {
   if (inputs.length === 0) {
     throw new Error('mergeBookmarkFiles requires at least one input');
   }
 
   const stats: BookmarkMergeStats = { total: 0, added: 0, updated: 0, identical: 0 };
   const conflicts: BookmarkMergeConflict[] = [];
+  const previousFolders = options.previousFolders;
 
   const [first, ...rest] = inputs;
   const roots: Partial<Record<BookmarkRootKey, TrackedNode>> = {};
@@ -105,7 +123,14 @@ export function mergeBookmarkFiles(inputs: BookmarkMergeInput[]): BookmarkMergeR
       }
       const existing = roots[key];
       roots[key] = existing
-        ? mergeTrackedNode(existing, toTrackedNode(incoming, input.browser), stats, conflicts)
+        ? mergeTrackedNode(
+            existing,
+            toTrackedNode(incoming, input.browser),
+            stats,
+            conflicts,
+            previousFolders,
+            true,
+          )
         : toTrackedNode(incoming, input.browser);
     }
   }
@@ -186,21 +211,16 @@ function mergeTrackedNode(
   incoming: TrackedNode,
   stats: BookmarkMergeStats,
   conflicts: BookmarkMergeConflict[],
+  previousFolders: ReadonlyMap<string, string> | undefined,
+  isRoot = false,
 ): TrackedNode {
+  if (base.node.type === 'folder' && incoming.node.type === 'folder') {
+    return mergeFolders(base, incoming, stats, conflicts, previousFolders, isRoot);
+  }
+
   const baseDateAdded = parseChromiumTime(base.node.date_added);
   const incomingDateAdded = parseChromiumTime(incoming.node.date_added);
   const winner = incomingDateAdded > baseDateAdded ? incoming : base;
-
-  if (base.node.type === 'folder' && incoming.node.type === 'folder') {
-    if (incomingDateAdded === baseDateAdded) {
-      stats.identical += 1;
-    }
-    return {
-      node: winner.node,
-      origin: winner.origin,
-      children: mergeChildren(base.children, incoming.children, stats, conflicts),
-    };
-  }
 
   if (incomingDateAdded === baseDateAdded) {
     stats.identical += 1;
@@ -225,12 +245,115 @@ function mergeTrackedNode(
   return base;
 }
 
+/**
+ * Merges two versions of the same folder.
+ *
+ * Chromium does not touch `date_modified` when a folder is renamed (it only
+ * changes when children are added, removed or moved), so the previous merge
+ * snapshot decides: if only one side's title differs from it, that side was
+ * renamed and its title wins. When both sides changed — or no snapshot exists yet
+ * — the newer `date_modified` wins, and a tie keeps the first browser's title.
+ */
+function mergeFolders(
+  base: TrackedNode,
+  incoming: TrackedNode,
+  stats: BookmarkMergeStats,
+  conflicts: BookmarkMergeConflict[],
+  previousFolders: ReadonlyMap<string, string> | undefined,
+  isRoot: boolean,
+): TrackedNode {
+  if (isRoot) {
+    // Permanent roots ("Bookmarks bar", "Other bookmarks") are rewritten with
+    // the browser's localized title on every load, so their titles are not user
+    // edits and must not drive the merge.
+    const baseAdded = parseChromiumTime(base.node.date_added);
+    const incomingAdded = parseChromiumTime(incoming.node.date_added);
+    if (baseAdded === incomingAdded) {
+      stats.identical += 1;
+    }
+    return {
+      node: incomingAdded > baseAdded ? incoming.node : base.node,
+      origin: incomingAdded > baseAdded ? incoming.origin : base.origin,
+      children: mergeChildren(base.children, incoming.children, stats, conflicts, previousFolders),
+    };
+  }
+
+  const baseModified = parseChromiumTime(base.node.date_modified ?? base.node.date_added);
+  const incomingModified = parseChromiumTime(
+    incoming.node.date_modified ?? incoming.node.date_added,
+  );
+  const winner = pickFolderWinner(base, incoming, previousFolders, baseModified, incomingModified);
+
+  if (base.node.name === incoming.node.name) {
+    stats.identical += 1;
+  } else {
+    const loser = winner === incoming ? base : incoming;
+    conflicts.push({
+      id: base.node.id,
+      name: winner.node.name,
+      type: 'folder',
+      winnerOrigin: winner.origin,
+      loserOrigin: loser.origin,
+      winnerDateAdded: parseChromiumTime(winner.node.date_added),
+      loserDateAdded: parseChromiumTime(loser.node.date_added),
+      winnerDateModified: winner === incoming ? incomingModified : baseModified,
+      loserDateModified: winner === incoming ? baseModified : incomingModified,
+    });
+    stats.updated += 1;
+  }
+
+  return {
+    node: winner.node,
+    origin: winner.origin,
+    children: mergeChildren(base.children, incoming.children, stats, conflicts, previousFolders),
+  };
+}
+
+function pickFolderWinner(
+  base: TrackedNode,
+  incoming: TrackedNode,
+  previousFolders: ReadonlyMap<string, string> | undefined,
+  baseModified: number,
+  incomingModified: number,
+): TrackedNode {
+  if (base.node.name === incoming.node.name) {
+    return base;
+  }
+
+  const previousName = folderPreviousName(base, incoming, previousFolders);
+  if (previousName !== undefined) {
+    const baseRenamed = base.node.name !== previousName;
+    const incomingRenamed = incoming.node.name !== previousName;
+    if (incomingRenamed && !baseRenamed) {
+      return incoming;
+    }
+    if (baseRenamed && !incomingRenamed) {
+      return base;
+    }
+  }
+
+  return incomingModified > baseModified ? incoming : base;
+}
+
+function folderPreviousName(
+  base: TrackedNode,
+  incoming: TrackedNode,
+  previousFolders: ReadonlyMap<string, string> | undefined,
+): string | undefined {
+  if (!previousFolders) {
+    return undefined;
+  }
+  const guid = base.node.guid ?? incoming.node.guid;
+  return guid ? previousFolders.get(guid) : undefined;
+}
+
 /** Matches the children of two versions of the same folder. */
 function mergeChildren(
   baseChildren: TrackedNode[],
   incomingChildren: TrackedNode[],
   stats: BookmarkMergeStats,
   conflicts: BookmarkMergeConflict[],
+  previousFolders: ReadonlyMap<string, string> | undefined,
 ): TrackedNode[] {
   const merged = [...baseChildren];
   const matched = new Array<boolean>(merged.length).fill(false);
@@ -260,7 +383,13 @@ function mergeChildren(
       return false;
     }
     matched[bestIndex] = true;
-    merged[bestIndex] = mergeTrackedNode(merged[bestIndex], incoming, stats, conflicts);
+    merged[bestIndex] = mergeTrackedNode(
+      merged[bestIndex],
+      incoming,
+      stats,
+      conflicts,
+      previousFolders,
+    );
     return true;
   };
 

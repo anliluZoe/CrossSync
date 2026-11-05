@@ -3,7 +3,7 @@ import fs from 'fs';
 import path from 'path';
 
 import type { BookmarkFile } from '@crosssync/shared';
-import { readJsonFile } from '@crosssync/shared';
+import { MERGE_STATE_FILE_NAME, readJsonFile } from '@crosssync/shared';
 
 import { runSync, writeBackBookmarks } from '../src/sync';
 import { Logger } from '../src/logger';
@@ -117,6 +117,72 @@ describe('runSync - bookmarks', () => {
     expect(barChildIds(edge)).toEqual(['2', '7']);
     expect(report.bookmarkMerge?.stats.added).toBe(1);
     expect(report.browsers.every((outcome) => outcome.writtenBack)).toBe(true);
+  });
+
+  it('propagates a folder rename made in the second browser', () => {
+    const root = makeTempDir('crosssync-rename');
+    const sharedFolder = (id: string, name: string) => {
+      const node = folder(
+        id,
+        name,
+        [url(`u-${id}`, 'Page', 'https://page.example.com', '1000')],
+        '1000',
+      );
+      node.guid = 'folder-guid';
+      node.date_modified = '2000';
+      return node;
+    };
+    const layout = createBrowserLayout(
+      root,
+      bookmarkFile(folder('1', 'Bookmarks bar', [sharedFolder('10', 'Work')])),
+      bookmarkFile(folder('1', 'Bookmarks bar', [sharedFolder('20', 'Work')])),
+    );
+    const config = createTestConfig(root, layout);
+    const sync = () =>
+      runSync({
+        config,
+        targets: { bookmarks: true, history: false },
+        now: NOW,
+        browserRunning: () => false,
+        logger: new Logger('error', { console: false }),
+      });
+
+    // First run records the folder title in the merge snapshot.
+    sync();
+    expect(readJsonFile(path.join(config.dataDir, MERGE_STATE_FILE_NAME))).not.toBeNull();
+
+    // The user renames the folder in Edge only.
+    const edgeFile = readBookmarkFile(path.join(layout.edgeDataDir, 'Default', 'Bookmarks'));
+    const edgeFolder = edgeFile.roots.bookmark_bar.children?.[0];
+    if (!edgeFolder) {
+      throw new Error('missing folder');
+    }
+    edgeFolder.name = '工作';
+    fs.writeFileSync(
+      path.join(layout.edgeDataDir, 'Default', 'Bookmarks'),
+      JSON.stringify(edgeFile),
+    );
+
+    sync();
+
+    const chrome = readBookmarkFile(path.join(layout.chromeDataDir, 'Default', 'Bookmarks'));
+    const edge = readBookmarkFile(path.join(layout.edgeDataDir, 'Default', 'Bookmarks'));
+    expect(chrome.roots.bookmark_bar.children?.[0].name).toBe('工作');
+    expect(edge.roots.bookmark_bar.children?.[0].name).toBe('工作');
+  });
+
+  it('does not advance the merge snapshot when a browser was skipped', () => {
+    const { config } = setup();
+    const report = runSync({
+      config,
+      targets: { bookmarks: true, history: false },
+      now: NOW,
+      browserRunning: (browser) => browser === 'edge',
+      logger: new Logger('error', { console: false }),
+    });
+
+    expect(report.browsers.find((outcome) => outcome.browser === 'edge')?.writtenBack).toBe(false);
+    expect(fs.existsSync(path.join(config.dataDir, MERGE_STATE_FILE_NAME))).toBe(false);
   });
 
   it('reports a failed write-back and keeps syncing the other browser', () => {

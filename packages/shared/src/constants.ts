@@ -23,6 +23,12 @@ export const LOG_DIR_NAME = 'logs';
 export const CONFIG_FILE_NAME = 'config.json';
 export const LOG_FILE_NAME = 'crosssync.log';
 
+/**
+ * Snapshot of the last merged bookmark tree (folder names by guid).
+ * Used to tell which browser changed a folder since the previous sync.
+ */
+export const MERGE_STATE_FILE_NAME = 'merge-state.json';
+
 /** File names inside a Chromium profile directory. */
 export const BOOKMARKS_FILE_NAME = 'Bookmarks';
 export const HISTORY_FILE_NAME = 'History';

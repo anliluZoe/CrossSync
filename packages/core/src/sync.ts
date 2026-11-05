@@ -1,11 +1,18 @@
 import path from 'path';
 
 import type { BookmarkFile, BrowserName, CliConfig, SyncStrategy } from '@crosssync/shared';
-import { BROWSERS, ensureDir, pathExists, writeJsonFileSafe } from '@crosssync/shared';
+import {
+  BROWSERS,
+  ensureDir,
+  MERGE_STATE_FILE_NAME,
+  pathExists,
+  writeJsonFileSafe,
+} from '@crosssync/shared';
 
 import { createBackup, formatBackupId, type BackupResult, type BackupSource } from './backup';
 import { getRunningBrowserNames } from './browser-status';
 import { Logger } from './logger';
+import { mergeStateFolders, readMergeState, writeMergeState } from './merge-state';
 import {
   mergeBookmarkFiles,
   mergeHistory,
@@ -258,10 +265,14 @@ function syncFoundData(context: SyncFoundDataContext): SyncReport {
     }
   }
 
+  const stateFile = path.join(config.dataDir, MERGE_STATE_FILE_NAME);
+  const previousState = bookmarkSources.length > 0 ? readMergeState(stateFile) : null;
+
   const bookmarkMerge =
     bookmarkSources.length > 0
       ? mergeBookmarkFiles(
           bookmarkSources.map((source) => ({ browser: source.browser, file: source.file })),
+          { previousFolders: mergeStateFolders(previousState) },
         )
       : null;
 
@@ -277,6 +288,7 @@ function syncFoundData(context: SyncFoundDataContext): SyncReport {
       warnings.push('Dry run: bookmark write-back skipped.');
     } else {
       writeBackMergedBookmarks(context, bookmarkMerge);
+      persistMergeState(stateFile, bookmarkMerge, context, warnings);
     }
   } else if (bookmarkMerge) {
     warnings.push('Strategy "export": browser bookmark files were left untouched.');
@@ -372,6 +384,39 @@ function writeBackMergedBookmarks(
         );
       }
     }
+  }
+}
+
+/**
+ * Saves the folder titles of the merged tree so the next run can tell which
+ * browser renamed a folder.
+ *
+ * The snapshot must only advance when every browser received the merged tree:
+ * otherwise a browser that was skipped would look "changed" against the new
+ * snapshot on the next sync, and its stale title would win.
+ */
+function persistMergeState(
+  stateFile: string,
+  bookmarkMerge: BookmarkMergeResult,
+  context: SyncFoundDataContext,
+  warnings: string[],
+): void {
+  const writtenBack = new Set(
+    context.browsers
+      .filter((outcome) => outcome.writtenBack)
+      .map((outcome) => `${outcome.browser}/${outcome.profile}`),
+  );
+  const skipped = context.bookmarkSources.some(
+    (source) => !writtenBack.has(`${source.browser}/${source.profile}`),
+  );
+  if (skipped) {
+    return;
+  }
+
+  try {
+    writeMergeState(stateFile, bookmarkMerge.roots);
+  } catch (error) {
+    warnings.push(`Could not save merge state: ${describeError(error)}`);
   }
 }
 

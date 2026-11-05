@@ -11,7 +11,7 @@
 ## 特性
 
 - **纯 CLI**：没有扩展、没有 WebSocket、没有 token
-- **双向合并书签**：按 `guid` → 名称/URL → URL 递归匹配（不依赖各浏览器本地的 `id`），同一条冲突保留 `date_added` 更新的那条
+- **双向合并书签**：按 `guid` → 名称/URL → URL 递归匹配（不依赖各浏览器本地的 `id`）。书签冲突保留 `date_added` 更新的那条；文件夹改名用「上次合并快照」判断是谁改的，所以在 Chrome 或 Edge 里改名都能同步过去
 - **历史只读导出**：SQLite 复制后查询，按 URL 去重合并，绝不写回 `History.sqlite`
 - **写前必备份**：备份失败则整次同步立即中止
 - **不会踩坏浏览器**：写回前检测浏览器是否运行；写回时移除过期 `checksum`
@@ -195,6 +195,7 @@ crosssync install-cron --expression "0 3 * * *"   # 每天凌晨 03:00
 | 内容 | 位置 |
 |---|---|
 | 配置 | `~/.crosssync/config.json` |
+| 上次合并快照 | `~/.crosssync/merge-state.json` |
 | 备份 | `~/.crosssync/backups/<yyyyMMdd-HHmmss>/` |
 | 导出 | `~/.crosssync/export/` |
 | 日志 | `~/.crosssync/logs/crosssync.log`（JSONL） |

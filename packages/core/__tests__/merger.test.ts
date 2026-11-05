@@ -331,6 +331,72 @@ describe('mergeBookmarkFiles', () => {
     expect(second.stats.added).toBe(0);
   });
 
+  function renameFixture(id: string, name: string, modified: string): BookmarkNode {
+    const node = folder(id, name, [url(`u-${id}`, 'Page', `https://${id}.example.com`)], '1000');
+    node.guid = 'folder-guid';
+    node.date_modified = modified;
+    return node;
+  }
+
+  it('propagates a folder rename made in the second browser', () => {
+    // The snapshot says the folder was called "Work". Chrome still has that
+    // title while Edge has the new one, so Edge is the side that was renamed.
+    const previous = new Map([['folder-guid', 'Work']]);
+    const result = mergeBookmarkFiles(
+      [
+        {
+          browser: 'chrome',
+          file: bookmarkFile(folder('1', 'Bookmarks bar', [renameFixture('10', 'Work', '2000')])),
+        },
+        {
+          browser: 'edge',
+          file: bookmarkFile(folder('1', 'Bookmarks bar', [renameFixture('20', '工作', '2000')])),
+        },
+      ],
+      { previousFolders: previous },
+    );
+
+    expect(result.roots.bookmark_bar.children?.[0].name).toBe('工作');
+    expect(result.conflicts[0].winnerOrigin).toBe('edge');
+    expect(result.stats.updated).toBe(1);
+  });
+
+  it('keeps the first browser title without a snapshot', () => {
+    const result = mergeBookmarkFiles([
+      {
+        browser: 'chrome',
+        file: bookmarkFile(folder('1', 'Bookmarks bar', [renameFixture('10', 'Work', '2000')])),
+      },
+      {
+        browser: 'edge',
+        file: bookmarkFile(folder('1', 'Bookmarks bar', [renameFixture('20', '工作', '2000')])),
+      },
+    ]);
+
+    expect(result.roots.bookmark_bar.children?.[0].name).toBe('Work');
+    expect(result.conflicts[0].winnerOrigin).toBe('chrome');
+  });
+
+  it('prefers the newer date_modified when both sides renamed the folder', () => {
+    const previous = new Map([['folder-guid', 'Old']]);
+    const merged = mergeBookmarkFiles(
+      [
+        {
+          browser: 'chrome',
+          file: bookmarkFile(folder('1', 'Bookmarks bar', [renameFixture('10', 'Mine', '2000')])),
+        },
+        {
+          browser: 'edge',
+          file: bookmarkFile(folder('1', 'Bookmarks bar', [renameFixture('20', 'Yours', '3000')])),
+        },
+      ],
+      { previousFolders: previous },
+    );
+
+    expect(merged.roots.bookmark_bar.children?.[0].name).toBe('Yours');
+    expect(merged.conflicts[0].winnerOrigin).toBe('edge');
+  });
+
   it('throws without any input', () => {
     expect(() => mergeBookmarkFiles([])).toThrow(/at least one input/);
   });

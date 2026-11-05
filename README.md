@@ -9,7 +9,7 @@
 `Bookmarks` 后，Chrome / Edge 在下次启动时把它上传到已登录的账号。
 
 ```bash
-crosssync sync --bookmarks     # 读取两边书签，按 id + date_added 合并后写回
+crosssync sync --bookmarks     # 读取两边书签，按 guid + 标题/URL 合并后写回
 crosssync install-cron         # 装一个每天 09:00 的定时任务
 crosssync status               # 看看浏览器、备份和定时任务的状态
 ```
@@ -17,7 +17,7 @@ crosssync status               # 看看浏览器、备份和定时任务的状�
 ## 特性
 
 - **纯 CLI**：没有扩展、没有 WebSocket、没有 token
-- **双向合并书签**：按 `guid` → 名称/URL → URL 递归匹配（不依赖各浏览器本地的 `id`），同一条冲突保留 `date_added` 更新的那条
+- **双向合并书签**：按 `guid` → 名称/URL → URL 递归匹配（不依赖各浏览器本地的 `id`）。书签冲突保留 `date_added` 更新的那条；文件夹改名用「上次合并快照」判断是谁改的，所以在 Chrome 或 Edge 里改名都能同步过去
 - **历史只读导出**：SQLite 复制后查询，按 URL 去重合并，绝不写回 `History.sqlite`
 - **写前必备份**：备份失败则整次同步立即中止
 - **不会踩坏浏览器**：写回前检测浏览器是否运行；写回时移除过期 `checksum`
@@ -86,7 +86,7 @@ crosssync sync --json                 # 机器可读报告
 1. 定位 Chrome / Edge 的 `Bookmarks` 与 `History`
 2. **备份**两边原始文件到 `~/.crosssync/backups/<时间戳>/`（失败即中止）
 3. 读取（历史通过临时副本读取 SQLite）
-4. 合并（书签按 `guid`/URL + `date_added`；历史按 `url`）
+4. 合并（书签按 `guid`/URL；书签正文按 `date_added`，文件夹标题按上次合并快照 + `date_modified`；历史按 `url`）
 5. 写回书签（浏览器运行中默认跳过），并按需导出 JSON
 
 ### Profile 选择
@@ -224,6 +224,7 @@ crosssync config --reset
 | 内容 | 位置 |
 |---|---|
 | 配置 | `~/.crosssync/config.json` |
+| 上次合并快照 | `~/.crosssync/merge-state.json`（文件夹标题，用于识别改名） |
 | 备份 | `~/.crosssync/backups/<yyyyMMdd-HHmmss>/` |
 | 导出 | `~/.crosssync/export/` |
 | 日志 | `~/.crosssync/logs/crosssync.log`（JSONL） |
