@@ -84,6 +84,7 @@ describe('buildProgram', () => {
       '--all',
       '--reset',
       '--browser',
+      '--json',
     ]);
     expect(optionsFor('restore')).toEqual(['--history', '--force', '--dry-run']);
     expect(optionsFor('install-cron')).toEqual(['--expression', '--label', '--dry-run']);

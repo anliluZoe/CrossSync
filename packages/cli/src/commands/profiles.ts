@@ -1,3 +1,4 @@
+import type { BrowserName } from '@crosssync/shared';
 import {
   addProfilesToSelection,
   BROWSERS,
@@ -22,6 +23,8 @@ export interface ProfilesCommandOptions {
   browser?: string;
   platform?: NodeJS.Platform;
   env?: NodeJS.ProcessEnv;
+  /** Print the report as JSON. */
+  json?: boolean;
 }
 
 /** Parses a comma-separated list of profile names, or the `all` sentinel. */
@@ -41,6 +44,38 @@ export function parseProfileNames(value: string): string[] | 'all' {
   return names;
 }
 
+export interface ProfileAccountInfo {
+  profile: string;
+  name?: string;
+  userName?: string;
+  gaiaName?: string;
+  isUsingDefaultName?: boolean;
+}
+
+export interface AvailableProfile {
+  profile: string;
+  selected: boolean;
+  account: ProfileAccountInfo | null;
+}
+
+export interface ProfilesBrowserReport {
+  browser: BrowserName;
+  dataDir: string;
+  enabled: boolean;
+  available: AvailableProfile[];
+  missingConfigured: string[];
+}
+
+export interface ProfilesListReport {
+  selected: string | null;
+  browsers: ProfilesBrowserReport[];
+}
+
+export interface ProfileMutationReport {
+  changed: boolean;
+  profile: string;
+}
+
 /** Lists available profiles for each browser, marking the current selection. */
 function listProfiles(context: CliContext, options: ProfilesCommandOptions): number {
   const filter = options.browser ?? 'all';
@@ -49,8 +84,41 @@ function listProfiles(context: CliContext, options: ProfilesCommandOptions): num
     return 1;
   }
 
+  const report = buildProfilesListReport(context, options);
+  if (options.json) {
+    context.io.out(JSON.stringify(report, null, 2));
+    return 0;
+  }
+
+  for (const browser of report.browsers) {
+    context.io.out(`${browser.browser}: ${browser.dataDir}${browser.enabled ? '' : ' [disabled]'}`);
+    if (browser.available.length === 0) {
+      context.io.out('  (no profiles found)');
+      continue;
+    }
+    for (const entry of browser.available) {
+      const account = formatProfileAccount(entry.account ?? undefined);
+      context.io.out(
+        `  ${entry.profile}${account ? `  ${account}` : ''}${entry.selected ? '  [selected]' : ''}`,
+      );
+    }
+    if (browser.missingConfigured.length > 0) {
+      context.io.out(`  (configured but not found: ${browser.missingConfigured.join(', ')})`);
+    }
+  }
+
+  context.io.out(`Selected profile(s): ${report.selected ?? 'all'}`);
+  return 0;
+}
+
+export function buildProfilesListReport(
+  context: CliContext,
+  options: ProfilesCommandOptions,
+): ProfilesListReport {
+  const filter = options.browser ?? 'all';
   const selection = context.config.profile;
   const selected = selection.trim() === 'all' ? null : parseProfileList(selection);
+  const browsers: ProfilesBrowserReport[] = [];
 
   for (const browser of BROWSERS) {
     if (filter !== 'all' && browser !== filter) {
@@ -62,29 +130,24 @@ function listProfiles(context: CliContext, options: ProfilesCommandOptions): num
       platform: options.platform,
       env: options.env,
     });
-    const available = reader.profiles();
-
-    context.io.out(`${browser}: ${reader.dataDir}${browserConfig.enabled ? '' : ' [disabled]'}`);
-    if (available.length === 0) {
-      context.io.out('  (no profiles found)');
-      continue;
-    }
+    const availableProfiles = reader.profiles();
     const infos = new Map(reader.profileInfos().map((info) => [info.profile, info]));
-    for (const name of available) {
-      const isSelected = selected === null || selected.includes(name);
-      const account = formatProfileAccount(infos.get(name));
-      context.io.out(
-        `  ${name}${account ? `  ${account}` : ''}${isSelected ? '  [selected]' : ''}`,
-      );
-    }
-    const missing = selected?.filter((name) => !available.includes(name)) ?? [];
-    if (missing.length > 0) {
-      context.io.out(`  (configured but not found: ${missing.join(', ')})`);
-    }
+    const available: AvailableProfile[] = availableProfiles.map((name) => ({
+      profile: name,
+      selected: selected === null || selected.includes(name),
+      account: infos.get(name) ?? null,
+    }));
+
+    browsers.push({
+      browser,
+      dataDir: reader.dataDir,
+      enabled: browserConfig.enabled,
+      available,
+      missingConfigured: selected?.filter((name) => !availableProfiles.includes(name)) ?? [],
+    });
   }
 
-  context.io.out(`Selected profile(s): ${selection}`);
-  return 0;
+  return { selected: selection.trim() === 'all' ? null : selection, browsers };
 }
 
 /** Expands `all` into the profiles that currently exist, for `--remove`. */
@@ -163,7 +226,13 @@ export function runProfilesCommand(
     const nextConfig = { ...context.config, profile: next };
     saveConfigFile(context.dirs.configFile, nextConfig);
     context.config = nextConfig;
-    context.io.out(`profile = ${JSON.stringify(next)}`);
+
+    const report: ProfileMutationReport = { changed: true, profile: next };
+    if (options.json) {
+      context.io.out(JSON.stringify(report, null, 2));
+    } else {
+      context.io.out(`profile = ${JSON.stringify(next)}`);
+    }
     return 0;
   } catch (error) {
     context.io.err(error instanceof Error ? error.message : String(error));

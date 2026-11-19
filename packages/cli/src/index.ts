@@ -129,7 +129,8 @@ export function buildProgram(contextFactory: ContextFactory = createCliContext):
     .option('--remove <names>', 'remove profiles from the selection')
     .option('--all', 'select every available profile')
     .option('--reset', 'reset the selection to "Default"')
-    .option('--browser <name>', 'limit listing to chrome, edge or all', 'all');
+    .option('--browser <name>', 'limit listing to chrome, edge or all', 'all')
+    .option('--json', 'print the profiles report as JSON');
   profilesCommand.action(
     withContext((context) => runProfilesCommand(context, profilesCommand.opts())),
   );

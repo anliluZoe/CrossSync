@@ -277,8 +277,9 @@ export async function runSyncCommand(
     }
   }
 
+  const output = buildSyncJsonOutput(report, options);
   if (options.json) {
-    context.io.out(JSON.stringify(report, null, 2));
+    context.io.out(JSON.stringify(output, null, 2));
   } else {
     for (const line of formatSyncReport(report)) {
       context.io.out(line);
@@ -289,6 +290,48 @@ export async function runSyncCommand(
     (warning) => warning.startsWith('Backup failed') || warning.startsWith('Could not write back'),
   );
   return failed ? 1 : 0;
+}
+
+export interface SyncJsonDryRunSummary {
+  wouldBackup: boolean;
+  wouldExport: boolean;
+  bookmarkConflicts: number;
+  historyConflicts: number;
+  browsers: Array<{
+    browser: BrowserName;
+    profile: string;
+    bookmarksRead: number;
+    historyRead: number;
+    wouldWriteBack: boolean;
+    skippedWriteBackReason: string | null;
+  }>;
+}
+
+export type SyncJsonOutput = SyncReport & { dryRunSummary?: SyncJsonDryRunSummary };
+
+export function buildSyncJsonOutput(report: SyncReport, options: SyncCommandOptions): SyncJsonOutput {
+  if (!options.json || !report.dryRun) {
+    return report;
+  }
+
+  return {
+    ...report,
+    dryRunSummary: {
+      wouldBackup: Boolean(report.bookmarkMerge || report.historyMerge),
+      wouldExport: Boolean(report.bookmarkMerge || report.historyMerge),
+      bookmarkConflicts: report.bookmarkMerge?.conflicts.length ?? 0,
+      historyConflicts: 0,
+      browsers: report.browsers.map((outcome) => ({
+        browser: outcome.browser,
+        profile: outcome.profile,
+        bookmarksRead: outcome.bookmarksRead,
+        historyRead: outcome.historyRead,
+        wouldWriteBack:
+          !outcome.skippedWriteBackReason && report.strategy === 'merge',
+        skippedWriteBackReason: outcome.skippedWriteBackReason,
+      })),
+    },
+  };
 }
 
 export function formatSyncReport(report: SyncReport): string[] {

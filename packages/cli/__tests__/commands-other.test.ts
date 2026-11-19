@@ -166,10 +166,13 @@ describe('status command', () => {
 
     const report = JSON.parse(io.stdout.join('\n')) as {
       version: string;
-      browsers: { browser: string }[];
+      configFile: string;
+      browsers: Array<{ browser: string; profiles: Array<{ profile: string }> }>;
     };
     expect(report.version).toBe(CLI_VERSION);
+    expect(report.configFile).toBe(context.dirs.configFile);
     expect(report.browsers.map((entry) => entry.browser)).toEqual(['chrome', 'edge']);
+    expect(report.browsers[0].profiles.map((profile) => profile.profile)).toEqual(['Default']);
   });
 });
 

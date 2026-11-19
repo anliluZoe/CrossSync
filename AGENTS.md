@@ -84,7 +84,174 @@ Tests must never touch a real browser profile. They use `os.tmpdir()` fixtures, 
   (the explicit `crosssync restore --history` recovery command is the only exception)
 - Reading passwords, cookies or tab data
 
-## CI
+## JSON output conventions (`--json`)
+
+CrossSync emits **parseable, versioned JSON** on stdout whenever `--json` is passed.
+Human-readable text is written to stdout as before; warnings and errors go to stderr.
+
+### Commands that support `--json`
+
+| Command | JSON shape | Notes |
+|---------|-----------|-------|
+| `sync --json` | `SyncReport` (see below) | `--dry-run` adds `dryRunSummary` |
+| `sync --json --dry-run` | `SyncJsonOutput` = `SyncReport` + `dryRunSummary` | No files are touched |
+| `status --json` | `StatusReport` | Full runtime snapshot |
+| `profiles --json` | `ProfilesListReport` or `ProfileMutationReport` | Shape depends on action |
+| `logs --json` | `LogEntry[]` | One entry per line in raw log |
+
+### `sync --json` — `SyncReport` (core `SyncReport` + CLI extensions)
+
+```jsonc
+{
+  "startedAt": "2026-01-16T09:30:05.000Z",
+  "finishedAt": "2026-01-16T09:30:07.000Z",
+  "dryRun": false,
+  "strategy": "merge",
+  "targets": { "bookmarks": true, "history": true },
+  "browsers": [
+    {
+      "browser": "chrome",
+      "profile": "Default",
+      "profileInfo": { "profile": "Default", "name": "Personal", "userName": "me@example.com", "gaiaName": "Me" },
+      "bookmarksRead": 5,
+      "historyRead": 2,
+      "writtenBack": true,
+      "skippedWriteBackReason": null
+    }
+  ],
+  "bookmarkMerge": {
+    "roots": { "bookmark_bar": { /* Chromium tree */ }, "other": { /* … */ } },
+    "stats": { "total": 7, "added": 1, "updated": 1, "identical": 5 },
+    "conflicts": [
+      {
+        "id": "3",
+        "name": "Shared (edge)",
+        "type": "url",
+        "winnerOrigin": "edge",
+        "loserOrigin": "chrome",
+        "winnerDateAdded": 13395000000000000,
+        "loserDateAdded": 13390000000000000
+      }
+    ]
+  },
+  "historyMerge": {
+    "entries": [ /* HistoryEntry[] */ ],
+    "stats": { "total": 4, "duplicates": 2 }
+  },
+  "backup": { "dir": "/path/to/backups/20260116-093005", "manifest": { /* … */ } },
+  "exportFiles": [ "/path/to/exports/bookmarks-merged-20260116-093005.json" ],
+  "warnings": [ "strategy 'export': browser bookmark files were left untouched." ]
+}
+```
+
+**Dry-run addition** — when `--dry-run` is set, the JSON object also includes:
+
+```jsonc
+{
+  // …all SyncReport fields, plus:
+  "dryRunSummary": {
+    "wouldBackup": true,
+    "wouldExport": true,
+    "bookmarkConflicts": 1,
+    "historyConflicts": 0,
+    "browsers": [
+      {
+        "browser": "chrome",
+        "profile": "Default",
+        "bookmarksRead": 5,
+        "historyRead": 2,
+        "wouldWriteBack": true,
+        "skippedWriteBackReason": null
+      }
+    ]
+  }
+}
+```
+
+`bookmarkConflicts` mirrors `bookmarkMerge.conflicts.length`.  `historyConflicts` is always `0`
+because history is never written back.  All `wouldWriteBack` values reflect `strategy === 'merge'`
+and `!skippedWriteBackReason`.  No `backup.dir`, `exportFiles` or actual file is present in dry-run
+output; `dryRunSummary.wouldBackup`/`wouldExport` describe what *would* happen.
+
+### `status --json` — `StatusReport`
+
+```jsonc
+{
+  "version": "0.1.8",
+  "configFile": "/home/user/.crosssync/config.json",
+  "dataDir": "/home/user/.crosssync",
+  "logLevel": "info",
+  "logFile": "/home/user/.crosssync/logs/crosssync.log",
+  "profile": "Default",
+  "schedule": { "installed": false, "expression": "0 9 * * *" },
+  "browsers": [
+    {
+      "browser": "chrome",
+      "dataDir": "/home/user/.config/google-chrome",
+      "exists": true,
+      "running": false,
+      "profiles": [
+        { "profile": "Default", "bookmarks": true, "history": true }
+      ]
+    }
+  ],
+  "backups": { "count": 3, "latest": "/path/to/backups/20260116-093005", "dir": "/path/to/backups" },
+  "exports": { "count": 2, "latest": "/path/to/exports/bookmarks-merged-20260116-093005.json", "dir": "/path/to/exports" }
+}
+```
+
+### `profiles --json` — list action → `ProfilesListReport`
+
+```jsonc
+{
+  "selected": "Default",
+  "browsers": [
+    {
+      "browser": "chrome",
+      "dataDir": "/home/user/.config/google-chrome",
+      "enabled": true,
+      "available": [
+        { "profile": "Default", "selected": true,  "account": { "name": "Personal", "userName": "me@example.com", "gaiaName": "Me" } },
+        { "profile": "Profile 11", "selected": false, "account": { "name": "Work", "userName": "work@example.com", "gaiaName": "Work" } }
+      ],
+      "missingConfigured": []
+    }
+  ]
+}
+```
+
+When the configured selection is `all`, `selected` is `null`.
+
+**Mutation actions** (`--set`, `--add`, `--remove`, `--all`, `--reset`) → `ProfileMutationReport`:
+
+```jsonc
+{ "changed": true, "profile": "Profile 11,Profile 12" }
+```
+
+### Conflict list guarantees
+
+`SyncReport.bookmarkMerge.conflicts` is always an array (possibly empty).  Each entry has:
+
+| Field | Type | Meaning |
+|-------|------|---------|
+| `id` | `string` | Chromium bookmark node id |
+| `name` | `string` | Winning node name |
+| `type` | `"url" \| "folder"` | Node type |
+| `winnerOrigin` | `BrowserName` | Browser whose version was kept |
+| `loserOrigin` | `BrowserName` | Browser whose version was overridden |
+| `winnerDateAdded` | `number` | Microseconds since Chromium epoch |
+| `loserDateAdded` | `number` | Microseconds since Chromium epoch |
+| `winnerDateModified` | `number?` | Folder only; `date_modified` of winner |
+| `loserDateModified` | `number?` | Folder only; `date_modified` of loser |
+
+### Parsing rules
+
+* Output is always a **single JSON value** (object or array) printed to stdout.
+* `JSON.parse()` on the full stdout string must succeed — no trailing log lines.
+* Timestamps are ISO 8601 UTC (`toISOString()`).
+* Chromium timestamps (`date_added`, `date_modified`, `lastVisitTime`) are **microseconds** as `number`.
+* `profileInfo` / `account` may be `null` when the browser profile is unsigned or the data is unreadable.
+* Exit code `0` on success, `1` on hard failures (backup failure, write-back failure, no data).
 
 `.github/workflows/ci.yml` runs on push/PR to `main`/`master`:
 
