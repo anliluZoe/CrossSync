@@ -135,6 +135,51 @@ describe('sync command', () => {
     expect(report.bookmarkMerge.stats).toBeDefined();
   });
 
+  it('adds a structured dry-run summary to JSON output', async () => {
+    const { context, io } = setupHarness();
+
+    await runSyncCommand(context, {
+      bookmarks: true,
+      json: true,
+      dryRun: true,
+      browserRunning: () => false,
+    });
+
+    const report = JSON.parse(io.stdout.join('\n')) as {
+      dryRun: boolean;
+      dryRunSummary: {
+        wouldBackup: boolean;
+        wouldExport: boolean;
+        bookmarkConflicts: number;
+        historyConflicts: number;
+        browsers: Array<{
+          browser: string;
+          profile: string;
+          bookmarksRead: number;
+          historyRead: number;
+          wouldWriteBack: boolean;
+          skippedWriteBackReason: string | null;
+        }>;
+      };
+      bookmarkMerge: { conflicts: Array<{ winnerOrigin: string; loserOrigin: string }> };
+    };
+
+    expect(report.dryRun).toBe(true);
+    expect(report.dryRunSummary).toBeDefined();
+    expect(report.dryRunSummary.wouldBackup).toBe(true);
+    expect(report.dryRunSummary.wouldExport).toBe(true);
+    expect(report.dryRunSummary.bookmarkConflicts).toBeGreaterThanOrEqual(0);
+    expect(report.dryRunSummary.browsers).toHaveLength(2);
+    expect(report.dryRunSummary.browsers[0].browser).toBe('chrome');
+    expect(report.dryRunSummary.browsers[0].wouldWriteBack).toBe(true);
+    expect(report.bookmarkMerge.conflicts.length).toBeGreaterThanOrEqual(0);
+    for (const conflict of report.bookmarkMerge.conflicts) {
+      expect(['chrome', 'edge']).toContain(conflict.winnerOrigin);
+      expect(['chrome', 'edge']).toContain(conflict.loserOrigin);
+      expect(conflict.winnerOrigin).not.toBe(conflict.loserOrigin);
+    }
+  });
+
   it('does not touch any file on a dry run', async () => {
     const { fixture, context, io } = setupHarness();
 

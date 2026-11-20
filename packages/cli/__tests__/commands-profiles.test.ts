@@ -40,6 +40,39 @@ describe('profiles command', () => {
     expect(output).toContain('Selected profile(s): Default');
   });
 
+  it('emits a parseable JSON report when listing profiles', () => {
+    const { context, io } = setupHarness();
+
+    expect(runProfilesCommand(context, { json: true })).toBe(0);
+
+    const report = JSON.parse(io.stdout.join('\n')) as {
+      selected: string | null;
+      browsers: Array<{
+        browser: string;
+        enabled: boolean;
+        available: Array<{ profile: string; selected: boolean }>;
+        missingConfigured: string[];
+      }>;
+    };
+    expect(report.selected).toBe('Default');
+    expect(report.browsers.map((browser) => browser.browser)).toEqual(['chrome', 'edge']);
+    const chrome = report.browsers.find((browser) => browser.browser === 'chrome');
+    expect(chrome?.available.map((entry) => entry.profile)).toEqual(['Default', 'Profile 11', 'Profile 12']);
+    expect(chrome?.available.find((entry) => entry.profile === 'Default')?.selected).toBe(true);
+    expect(chrome?.missingConfigured).toEqual([]);
+  });
+
+  it('emits a parseable JSON report when changing the selection', () => {
+    const { fixture, context, io } = setupHarness();
+
+    expect(runProfilesCommand(context, { set: 'Profile 11,Profile 12', json: true })).toBe(0);
+
+    const report = JSON.parse(io.stdout.join('\n')) as { changed: boolean; profile: string };
+    expect(report.changed).toBe(true);
+    expect(report.profile).toBe('Profile 11,Profile 12');
+    expect(JSON.parse(fs.readFileSync(fixture.configFile, 'utf8')).profile).toBe('Profile 11,Profile 12');
+  });
+
   it('shows the account behind each profile', () => {
     const { fixture, context, io } = setupHarness();
     fs.writeFileSync(
